@@ -1,10 +1,20 @@
 Momon — Asisten Keuangan Telegram
-Copyright 2026 abela-a
+Copyright (c) 2026 Dhana (abela-a)
+https://github.com/abela-a/momon.bot
 
-This product is licensed under the Apache License, Version 2.0.
-You may obtain a copy of the License at
+Karya ini dilisensikan di bawah
+Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International
+(CC BY-NC-SA 4.0) — teks lengkapnya ada di berkas LICENSE, atau di
+https://creativecommons.org/licenses/by-nc-sa/4.0/
 
-    http://www.apache.org/licenses/LICENSE-2.0
+Jika kamu menyebarkan ulang karya ini, baik yang asli maupun yang sudah
+kamu ubah, kamu WAJIB tetap menyertakan:
 
-Jika kamu mendistribusikan ulang karya ini (asli maupun yang sudah diubah),
-sertakan salinan file NOTICE ini beserta LICENSE.
+  1. Baris hak cipta di atas beserta tautan ke sumber aslinya.
+  2. Tautan ke teks lisensi (berkas LICENSE atau URL di atas).
+  3. Keterangan bahwa karya ini disediakan tanpa jaminan apa pun.
+  4. Penanda yang jelas pada bagian yang kamu ubah dari versi aslinya.
+  5. Lisensi yang sama (CC BY-NC-SA 4.0) untuk karya turunanmu.
+
+Penggunaan untuk tujuan komersial TIDAK diizinkan tanpa izin tertulis
+dari pemilik hak cipta.

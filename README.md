@@ -61,7 +61,7 @@ nilainya dipaksa ke `Lainnya` dan kamu diberi tahu lewat peringatan ⚠️.
 ├── appsscript.json       # manifest Apps Script (timezone + konfigurasi Web App)
 ├── .clasp.json.example   # contoh config clasp — salin ke .clasp.json
 ├── .gitignore
-├── LICENSE               # Apache License 2.0
+├── LICENSE               # CC BY-NC-SA 4.0 (teks legal resmi)
 ├── NOTICE                # atribusi yang wajib ikut saat didistribusikan ulang
 └── README.md
 ```
@@ -305,17 +305,33 @@ Log lengkap ada di **Executions** pada editor Apps Script.
 
 ## 📄 Lisensi
 
-[Apache License 2.0](LICENSE) — Copyright 2026 Dhana.
+**Momon adalah milik Dhana (abela-a).** Hak ciptanya tidak dilepas.
 
-Silakan dipakai, diubah, dikembangkan, bahkan dijual. Syaratnya:
+Karya ini dilisensikan di bawah
+[Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International](LICENSE)
+(**CC BY-NC-SA 4.0**) — Copyright © 2026 Dhana (abela-a).
 
-- ✅ **Lampirkan sumbernya** — sertakan salinan [`LICENSE`](LICENSE) dan [`NOTICE`](NOTICE),
-  serta pertahankan baris copyright di header `Momon.gs`.
-- ✅ **Tandai perubahanmu** — beri keterangan pada file yang kamu ubah, supaya jelas
-  mana yang karya asli dan mana hasil modifikasimu.
-- ❌ **Tanpa garansi** — dipakai atas risiko sendiri. Ini menyangkut data keuanganmu,
-  jadi periksa sendiri sebelum dipercaya penuh.
-- ⚖️ Lisensi ini juga memberi **hibah paten** eksplisit dari kontributor ke pengguna.
+[![License: CC BY-NC-SA 4.0](https://img.shields.io/badge/License-CC%20BY--NC--SA%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by-nc-sa/4.0/)
 
-Nama "Momon" dan isi README ikut lisensi yang sama; merek atau logo pihak lain
-(Telegram, Google, Gemini) bukan bagian dari hibah ini.
+| | |
+|---|---|
+| ✅ **Boleh dipakai & dipelajari** | Jalankan untuk keperluan pribadi sepuasnya |
+| ✅ **Boleh diubah** | Fork, modifikasi, kembangkan sesuai kebutuhanmu |
+| ✅ **Boleh disebarkan ulang** | Asal syarat di bawah dipenuhi |
+| ❌ **Dilarang untuk komersial** | Tidak boleh dijual, dijadikan produk/layanan berbayar, atau dipakai untuk keuntungan komersial — kecuali dengan izin tertulis dari pemilik |
+| 🔒 **Share-Alike** | Karya turunanmu **wajib** memakai lisensi yang sama (CC BY-NC-SA 4.0) |
+| 📝 **Atribusi wajib** | Cantumkan nama pemilik + tautan ke repo ini, dan tandai bagian yang kamu ubah |
+| ⚠️ **Tanpa jaminan** | Dipakai atas risiko sendiri. Ini menyangkut data keuanganmu — periksa sendiri sebelum dipercaya penuh |
+
+Rincian kewajiban saat mendistribusikan ulang ada di [`NOTICE`](NOTICE).
+
+Butuh memakai Momon untuk keperluan komersial? Hubungi pemiliknya untuk
+meminta lisensi terpisah.
+
+> Catatan: lisensi Creative Commons dirancang untuk karya kreatif, bukan
+> khusus untuk kode, sehingga tidak mengatur paten dan batas "nonkomersial"
+> bisa abu-abu dalam kasus tertentu. Lisensi ini dipilih secara sadar untuk
+> menegaskan kepemilikan dan melarang pemanfaatan komersial.
+
+Merek dan logo pihak ketiga (Telegram, Google, Gemini) bukan bagian dari
+lisensi ini.

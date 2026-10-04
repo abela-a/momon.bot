@@ -9,19 +9,22 @@
  *
  *  Panduan pemasangan lengkap ada di README.md.
  * ------------------------------------------------------------
- *  Copyright 2026 Dhana
+ *  Momon — Asisten Keuangan Telegram
+ *  Copyright (c) 2026 Dhana (abela-a)
  *
- *  Licensed under the Apache License, Version 2.0 (the "License");
- *  you may not use this file except in compliance with the License.
- *  You may obtain a copy of the License at
+ *  Karya ini dilisensikan di bawah Creative Commons
+ *  Attribution-NonCommercial-ShareAlike 4.0 International
+ *  (CC BY-NC-SA 4.0).
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ *  Kamu BOLEH memakai, mengubah, dan menyebarkan ulang karya ini dengan
+ *  syarat: mencantumkan atribusi ke pemilik di atas, menandai bagian yang
+ *  kamu ubah, TIDAK memakainya untuk tujuan komersial, dan merilis karya
+ *  turunanmu dengan lisensi yang sama.
  *
- *  Unless required by applicable law or agreed to in writing, software
- *  distributed under the License is distributed on an "AS IS" BASIS,
- *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *  See the License for the specific language governing permissions and
- *  limitations under the License.
+ *  Teks lengkap: berkas LICENSE
+ *  https://creativecommons.org/licenses/by-nc-sa/4.0/
+ *
+ *  Disediakan APA ADANYA, tanpa jaminan apa pun.
  * ============================================================
  */
 

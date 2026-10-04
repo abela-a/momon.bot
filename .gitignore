@@ -1,0 +1,32 @@
+# ---- Rahasia: jangan pernah ter-commit ----
+*.local.*
+.env
+.env.*
+secrets*
+credentials*.json
+*.key
+*.pem
+
+# ---- clasp (Apps Script CLI) ----
+# .clasp.json berisi scriptId milik project pribadi -> jangan di-push.
+# Gunakan .clasp.json.example sebagai contoh.
+.clasp.json
+.clasprc.json
+
+# ---- Tooling ----
+node_modules/
+package-lock.json
+yarn.lock
+.cache/
+
+# ---- Editor & OS ----
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# ---- Agent/scratch ----
+.claude/
+graphify-out/

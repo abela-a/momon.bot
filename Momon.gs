@@ -845,11 +845,23 @@ function momonSaring(rows, spec) {
     });
 }
 
+/**
+ * Transfer antar kantong cuma memindah saldo (tidak menambah/mengurangi kekayaan),
+ * begitu juga uang yang disisihkan ke kategori "Investasi" (ditabung/diinvestasikan,
+ * bukan dibelanjakan) — keduanya tidak boleh dihitung sebagai pengeluaran/pemasukan.
+ */
+function momonBukanArusKas(r) {
+    if (r.kategori === MOMON_KATEGORI_TRANSFER) return true;
+    if (r.tipe === "Pengeluaran" && r.kategori.toLowerCase() === "investasi") return true;
+    return false;
+}
+
 function momonHitungRingkasan(rows) {
     let masuk = 0,
         keluar = 0,
         terbesar = null;
     rows.forEach((r) => {
+        if (momonBukanArusKas(r)) return;
         if (r.tipe === "Pemasukan") masuk += r.nominal;
         else {
             keluar += r.nominal;
@@ -879,6 +891,8 @@ function momonKelompokkan(rows, kelompok) {
 
     const peta = {};
     rows.forEach((r) => {
+        if (momonBukanArusKas(r)) return;
+
         let label;
         if (kelompok === "kantong") label = r.kantong;
         else if (kelompok === "tipe") label = r.tipe;

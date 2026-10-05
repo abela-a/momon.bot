@@ -92,6 +92,7 @@ const MOMON_KATEGORI_PENGELUARAN = [
     "Lainnya",
 ];
 const MOMON_KATEGORI_PEMASUKAN = ["Gaji", "Bonus/THR", "Freelance/Usaha", "Investasi", "Hadiah", "Lainnya"];
+const MOMON_KATEGORI_TRANSFER = "Transfer Antar Kantong";
 const MOMON_KANTONG_DEFAULT = ["Cash", "Bank Jago", "Investasi", "GoPay", "BSI"];
 
 const MOMON_HEADER = ["Tanggal Transaksi", "Tipe", "Kategori", "Kantong", "Nominal", "Deskripsi", "Dicatat Pada"];
@@ -223,6 +224,25 @@ function momonRoute(user, teks) {
     if (lower.indexOf("/sheet") === 0) return momonKirimLinkSheet(user);
     if (lower.indexOf("/kategori") === 0) return momonDaftarKategori(user);
     if (lower.indexOf("/kantong") === 0) return momonDaftarKantong(user);
+
+    // /transfer <nominal> dari <kantong asal> ke <kantong tujuan>
+    if (lower.indexOf("/transfer") === 0) {
+        const kueri = teks.slice("/transfer".length).trim();
+        if (!kueri) {
+            return momonKirim(
+                user.chatId,
+                [
+                    "🔄 <b>Transfer antar kantong</b>",
+                    "Tulis seperti ini:",
+                    "<pre><code>/transfer 100k dari Cash ke GoPay</code></pre>",
+                ].join("\n"),
+            );
+        }
+        const hasil = momonOtak(user, kueri, "transfer");
+        if (hasil && hasil.gagal) return momonKirim(user.chatId, hasil.reply);
+        return momonTransfer(user, hasil && hasil.transfer ? hasil.transfer : {});
+    }
+
     if (lower.indexOf("/hari") === 0) return momonLaporanCepat(user, "hari ini");
     if (lower.indexOf("/minggu") === 0) return momonLaporanCepat(user, "minggu ini");
     if (lower.indexOf("/bulan") === 0) return momonLaporanCepat(user, "bulan ini");
@@ -259,6 +279,7 @@ function momonProsesTeksBebas(user, teks) {
     const intent = String(hasil.intent || "obrolan").toLowerCase();
 
     if (intent === "transaksi") return momonCatatTransaksi(user, hasil.transaksi);
+    if (intent === "transfer") return momonTransfer(user, hasil.transfer);
     if (intent === "laporan") return momonSajikanLaporan(user, hasil.laporan, teks);
 
     momonKirim(
@@ -288,8 +309,10 @@ function momonOtak(user, teks, paksaIntent) {
     const awalBulan = Utilities.formatDate(now, MOMON_TIMEZONE, "yyyy-MM-01");
 
     const aturanIntent = paksaIntent
-        ? `Pesan ini SUDAH DIPASTIKAN permintaan laporan. Set "intent": "laporan".`
-        : `Tentukan "intent" dari pesan: "transaksi" (mencatat uang masuk/keluar), "laporan" (menanyakan/merekap data yang sudah tercatat), atau "obrolan" (sapaan, pertanyaan umum, curhat).`;
+        ? paksaIntent === "transfer"
+            ? `Pesan ini SUDAH DIPASTIKAN permintaan transfer antar kantong. Set "intent": "transfer".`
+            : `Pesan ini SUDAH DIPASTIKAN permintaan laporan. Set "intent": "laporan".`
+        : `Tentukan "intent" dari pesan: "transaksi" (mencatat uang masuk/keluar), "transfer" (memindahkan saldo antar kantong milik sendiri, misal "pindah 100k dari Cash ke GoPay"), "laporan" (menanyakan/merekap data yang sudah tercatat), atau "obrolan" (sapaan, pertanyaan umum, curhat).`;
 
     const prompt = `Kamu adalah "Momon", asisten keuangan pribadi yang CERIA, hangat, dan suka menyemangati.
 Kamu bicara dengan ${user.nama}. Gaya bahasa: santai, akrab, pakai emoji secukupnya (1-3 per balasan),
@@ -312,6 +335,14 @@ JIKA intent = "transaksi", isi object "transaksi":
 - "tanggal": ISO "YYYY-MM-DD". Hitung kata relatif ("kemarin", "3 hari lalu", "Senin kemarin") dari hari ini. Kalau tidak disebut, pakai ${hariIni}.
 - "waktu": "HH:mm" HANYA kalau disebut eksplisit, selain itu "".
 
+JIKA intent = "transfer", isi object "transfer":
+- "dari": kantong asal, PERSIS satu dari ${JSON.stringify(user.kantong)}.
+- "ke": kantong tujuan, PERSIS satu dari ${JSON.stringify(user.kantong)}, harus beda dari "dari".
+- "nominal": angka murni ("50k" -> 50000, "2jt" -> 2000000, "1.5jt" -> 1500000).
+- "deskripsi": ringkasan singkat kalau disebut, selain itu "".
+- "tanggal": ISO "YYYY-MM-DD". Hitung kata relatif dari hari ini. Kalau tidak disebut, pakai ${hariIni}.
+- "waktu": "HH:mm" HANYA kalau disebut eksplisit, selain itu "".
+
 JIKA intent = "laporan", isi object "laporan" (ini dipakai untuk memfilter data, bukan untuk menghitung — jangan mengarang angka):
 - "judul": judul pendek laporan, contoh "Pengeluaran Makanan Bulan Ini".
 - "dari" dan "sampai": rentang tanggal ISO "YYYY-MM-DD" (inklusif). Terjemahkan "minggu lalu", "bulan ini", "3 bulan terakhir", "Januari", dsb. Kalau pesan tidak menyebut waktu sama sekali, pakai "${awalBulan}" sampai "${hariIni}".
@@ -330,7 +361,7 @@ JIKA intent = "laporan", isi object "laporan" (ini dipakai untuk memfilter data,
 Pesan ${user.nama}: "${teks}"
 
 Jawab HANYA JSON murni, tanpa markdown, tanpa teks lain:
-{"intent":"obrolan","transaksi":{"tipe":"","kategori":"","kantong":"","nominal":0,"deskripsi":"","tanggal":"","waktu":""},"laporan":{"judul":"","dari":"","sampai":"","tipe":"Semua","kategori":[],"kantong":[],"kata_kunci":"","min_nominal":0,"max_nominal":0,"kelompok":"kategori","urut":"nominal_desc","limit":0,"rincian":true},"reply":""}`;
+{"intent":"obrolan","transaksi":{"tipe":"","kategori":"","kantong":"","nominal":0,"deskripsi":"","tanggal":"","waktu":""},"transfer":{"dari":"","ke":"","nominal":0,"deskripsi":"","tanggal":"","waktu":""},"laporan":{"judul":"","dari":"","sampai":"","tipe":"Semua","kategori":[],"kantong":[],"kata_kunci":"","min_nominal":0,"max_nominal":0,"kelompok":"kategori","urut":"nominal_desc","limit":0,"rincian":true},"reply":""}`;
 
     const jawaban = momonPanggilGemini(config, prompt, 0.2);
     if (!jawaban.ok) {
@@ -466,6 +497,21 @@ function momonNormalisasiTransaksi(user, raw) {
         peringatan.push(`Kantong "${kantongInput || "-"}" belum terdaftar, Momon catat ke "${kantong}".`);
     }
 
+    const tanggal = momonResolveTanggalWaktu(raw, peringatan);
+
+    return {
+        tipe: tipe,
+        kategori: kategori,
+        kantong: kantong,
+        nominal: Number(raw.nominal),
+        deskripsi: String(raw.deskripsi || "-").trim() || "-",
+        tanggal: tanggal,
+        peringatan: peringatan,
+    };
+}
+
+/** Gabungkan tanggal & jam dari input AI jadi satu Date; tiap penyesuaian dicatat ke `peringatan`. */
+function momonResolveTanggalWaktu(raw, peringatan) {
     // Tanggal: boleh backdate, tapi tidak boleh di masa depan.
     const now = new Date();
     const hariIni = Utilities.formatDate(now, MOMON_TIMEZONE, "yyyy-MM-dd");
@@ -497,24 +543,93 @@ function momonNormalisasiTransaksi(user, raw) {
         }
     }
 
-    let tanggal;
     try {
-        tanggal = Utilities.parseDate(`${tanggalStr} ${jamMenit}:00`, MOMON_TIMEZONE, "yyyy-MM-dd HH:mm:ss");
+        const tanggal = Utilities.parseDate(`${tanggalStr} ${jamMenit}:00`, MOMON_TIMEZONE, "yyyy-MM-dd HH:mm:ss");
         if (isNaN(tanggal.getTime())) throw new Error("invalid");
+        return tanggal;
     } catch (err) {
-        tanggal = now;
         peringatan.push("Gagal menyusun tanggal & jam, Momon catat sebagai waktu sekarang.");
+        return now;
+    }
+}
+
+/**
+ * Transfer antar kantong milik user sendiri — dicatat sebagai sepasang baris
+ * (Pengeluaran di kantong asal, Pemasukan di kantong tujuan) dengan kategori
+ * khusus MOMON_KATEGORI_TRANSFER supaya mudah dibedakan dari transaksi biasa
+ * dan tidak mengubah saldo total (hanya berpindah antar kantong).
+ */
+function momonTransfer(user, raw) {
+    raw = raw || {};
+
+    if (!raw.nominal || isNaN(raw.nominal) || Number(raw.nominal) <= 0) {
+        return momonKirim(
+            user.chatId,
+            [
+                "🤏 <b>Nominalnya belum kebaca nih!</b>",
+                "Coba tulis seperti ini, contoh:",
+                "<pre><code>pindah 100k dari Cash ke GoPay</code></pre>",
+            ].join("\n"),
+        );
     }
 
-    return {
-        tipe: tipe,
-        kategori: kategori,
-        kantong: kantong,
-        nominal: Number(raw.nominal),
-        deskripsi: String(raw.deskripsi || "-").trim() || "-",
-        tanggal: tanggal,
-        peringatan: peringatan,
-    };
+    const dariInput = String(raw.dari || "").trim();
+    const keInput = String(raw.ke || "").trim();
+    const dari = user.kantong.find((k) => k.toLowerCase() === dariInput.toLowerCase());
+    const ke = user.kantong.find((k) => k.toLowerCase() === keInput.toLowerCase());
+
+    if (!dari || !ke) {
+        return momonKirim(
+            user.chatId,
+            [
+                "🙈 <b>Kantong asal/tujuannya belum ketemu nih.</b>",
+                `Kantong yang Momon kenal: ${user.kantong.map((k) => momonEsc(k)).join(", ")}.`,
+                "Coba sebutkan lagi, contoh:",
+                `<pre><code>pindah 100k dari ${momonEsc(user.kantong[0])} ke ${momonEsc(
+                    user.kantong[1] || user.kantong[0],
+                )}</code></pre>`,
+            ].join("\n"),
+        );
+    }
+
+    if (dari.toLowerCase() === ke.toLowerCase()) {
+        return momonKirim(user.chatId, "🙃 Kantong asal dan tujuan sama, nggak ada yang perlu dipindah dong!");
+    }
+
+    const peringatan = [];
+    const tanggal = momonResolveTanggalWaktu(raw, peringatan);
+    const nominal = Number(raw.nominal);
+    const deskripsi = String(raw.deskripsi || "").trim();
+    const catatanDari = "Transfer ke " + ke + (deskripsi ? ": " + deskripsi : "");
+    const catatanKe = "Transfer dari " + dari + (deskripsi ? ": " + deskripsi : "");
+
+    const sheet = momonSheetData(user);
+    const now = new Date();
+    sheet.appendRow([tanggal, "Pengeluaran", MOMON_KATEGORI_TRANSFER, dari, nominal, catatanDari, now]);
+    sheet.appendRow([tanggal, "Pemasukan", MOMON_KATEGORI_TRANSFER, ke, nominal, catatanKe, now]);
+
+    const backdate =
+        Utilities.formatDate(tanggal, MOMON_TIMEZONE, "yyyy-MM-dd") !==
+        Utilities.formatDate(now, MOMON_TIMEZONE, "yyyy-MM-dd");
+
+    const baris = [];
+    baris.push(`✅ <b>Sip, transfer dicatat ya ${momonEsc(user.nama)}!</b> ${momonSemangat()}`);
+    baris.push("");
+    baris.push(
+        `🔄 Rp <b>${momonRupiah(nominal)}</b> dipindah dari <b>${momonEsc(dari)}</b> ke <b>${momonEsc(ke)}</b>`,
+    );
+    if (deskripsi) baris.push(`📝 ${momonEsc(deskripsi)}`);
+    baris.push(
+        `🗓️ ${Utilities.formatDate(tanggal, MOMON_TIMEZONE, "d MMMM yyyy, HH:mm")}${backdate ? " (backdate)" : ""}`,
+    );
+    if (peringatan.length) {
+        baris.push("");
+        baris.push("⚠️ " + peringatan.join(" "));
+    }
+
+    momonKirim(user.chatId, baris.join("\n"), {
+        tombol: { teks: "📊 Lihat di Google Sheet", url: momonUrlSheet(sheet) },
+    });
 }
 
 // ============================================================
@@ -1020,6 +1135,9 @@ function momonBantuan(user) {
             "<pre><code>gajian 5jt</code></pre>",
             "<pre><code>kemarin beli buku 120k</code></pre>",
             "",
+            "<b>🔄 Transfer antar kantong</b> — tulis atau pakai /transfer:",
+            "<pre><code>pindah 100k dari Cash ke GoPay</code></pre>",
+            "",
             "<b>🧠 Tanya apa saja</b> — Momon paham bahasa manusia:",
             "<pre><code>berapa jajanku minggu lalu?</code></pre>",
             "<pre><code>5 pengeluaran terbesar bulan ini</code></pre>",
@@ -1034,6 +1152,7 @@ function momonBantuan(user) {
             "/sheet — buka Google Sheet",
             "/kategori — daftar kategori",
             "/kantong — daftar kantong",
+            "/transfer &lt;nominal&gt; dari &lt;asal&gt; ke &lt;tujuan&gt; — pindah saldo antar kantong",
             "/id — lihat chat id kamu",
             "/help — pesan ini",
             "",

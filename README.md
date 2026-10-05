@@ -31,6 +31,8 @@ Momon : 📊 Pengeluaran Makanan Minggu Lalu
 | Fitur | Keterangan |
 |---|---|
 | 💬 **Catat pakai bahasa manusia** | `kemarin beli buku 120k`, `gajian 5jt`, `bensin 50rb jam 7 pagi` |
+| 🧾 **Banyak transaksi sekaligus** | `kopi 25k, parkir 5k, gajian 5jt` — satu pesan, langsung tercatat semua |
+| 🔄 **Transfer antar kantong** | `pindah 100k dari Cash ke GoPay` atau `/transfer 100k dari Cash ke GoPay` |
 | 🧠 **Laporan cerdas** | Tanya bebas: `5 pengeluaran terbesar bulan ini`, `rekap transportasi 3 bulan terakhir` |
 | 👥 **Multi-akun** | Dua (atau lebih) akun Telegram, **sheet-nya terpisah** — data tidak tercampur |
 | 📊 **Buka di Google Sheet** | Tiap laporan ditulis ke sheet tersendiri + tombol langsung ke tab-nya |
@@ -48,8 +50,10 @@ Seluruh penjumlahan, rata-rata, dan persentase dikerjakan oleh JavaScript di
 Jadi laporan tidak mungkin berisi angka halusinasi.
 
 Hasil AI juga selalu divalidasi ulang terhadap daftar tertutup
-(`momonNormalisasiTransaksi`, `momonNormalisasiSpec`). Kalau AI mengarang kategori,
-nilainya dipaksa ke `Lainnya` dan kamu diberi tahu lewat peringatan ⚠️.
+(`momonCatatTransaksi`, `momonTransfer`, `momonNormalisasiSpec`). Kantong & nominal
+divalidasi ketat — kalau tidak cocok, transaksi **ditolak** dan kamu diminta
+memperjelas, bukan dicatat asal-asalan. Kategori tetap dibantu AI: kalau AI mengarang
+kategori, nilainya dipaksa ke `Lainnya` dan kamu diberi tahu lewat peringatan ⚠️.
 
 ---
 
@@ -85,10 +89,44 @@ Tidak ada dependency, tidak ada build step.
 4. Klik ⚙️ **Project Settings** → centang *Show "appsscript.json" manifest file*,
    lalu samakan isinya dengan `appsscript.json` di repo ini.
 
-### 2. Buat bot Telegram
+### 2. Buat & siapkan bot Telegram
 
-1. Chat [@BotFather](https://t.me/BotFather) → `/newbot` → ikuti instruksinya.
-2. Simpan token yang diberikan (bentuknya `123456789:AA...`).
+1. Chat [@BotFather](https://t.me/BotFather) → `/newbot` → ikuti instruksinya
+   (nama bebas, username wajib berakhiran `bot`, misal `MomonKeuangan_bot`).
+2. Simpan token yang diberikan (bentuknya `123456789:AA...`) — ini nilai untuk `MOMON_BOT_TOKEN`.
+
+**Lengkapi profil bot lewat @BotFather (opsional, tapi disarankan):**
+
+| Perintah BotFather | Fungsi | Contoh isi |
+|---|---|---|
+| `/setdescription` | Teks yang tampil di layar sebelum chat pertama dimulai | `Asisten keuangan pribadi yang ceria — catat transaksi, transfer antar kantong, dan tanya laporan cukup lewat chat.` |
+| `/setabouttext` | Teks singkat di halaman profil bot | `Catat uang masuk/keluar & tanya laporan lewat chat biasa. Dibuat dengan Google Apps Script.` |
+| `/setuserpic` | Foto profil bot | unggah gambar bebas |
+| `/setcommands` | Daftar command yang muncul di menu "/" Telegram | lihat blok di bawah |
+| `/setjoingroups` | **Disable** — Momon bot personal, tidak dirancang dipakai di grup | `Disable` |
+| `/setprivacy` | Mode privasi di grup; tidak berpengaruh untuk chat pribadi | boleh dilewati |
+
+Untuk `/setcommands`, pilih bot kamu lalu kirim blok berikut **persis seperti ini**
+(format `nama - deskripsi`, nama harus huruf kecil tanpa `/`):
+
+```
+start - Panduan singkat
+help - Panduan & daftar perintah
+saldo - Saldo tiap kantong + total
+hari - Rekap hari ini
+minggu - Rekap minggu ini
+bulan - Rekap bulan ini
+laporan - Laporan cerdas, tambahkan pertanyaan bebas
+transfer - Transfer saldo antar kantong
+sheet - Tombol ke Google Sheet
+kategori - Daftar kategori yang berlaku
+kantong - Daftar kantong milikmu
+id - Tampilkan chat id
+```
+
+> Daftar `/setcommands` ini murni kosmetik (menu "/" di aplikasi Telegram) — perilaku
+> command yang sebenarnya tetap ditentukan oleh `momonRoute()` di `Momon.gs`. Kalau nanti
+> menambah command baru di kode, perbarui juga daftar ini lewat `/setcommands`.
 
 ### 3. Ambil Gemini API key
 
@@ -188,13 +226,14 @@ Selesai. Kirim `/help` ke bot untuk mulai. 🎉
 | `/minggu` | Rekap minggu ini |
 | `/bulan` | Rekap bulan ini |
 | `/laporan <pertanyaan>` | Laporan cerdas; tanpa argumen = bulan ini |
+| `/transfer <nominal> dari <asal> ke <tujuan>` | Transfer saldo antar kantong; tanpa argumen = contoh cara pakai |
 | `/sheet` | Tombol ke Google Sheet |
 | `/kategori` | Daftar kategori yang berlaku |
 | `/kantong` | Daftar kantong milikmu |
 | `/id` | Tampilkan chat id (terbuka untuk siapa saja) |
 
 **Teks bebas** tidak perlu perintah. Momon sendiri yang menebak maksudnya:
-mencatat transaksi, menanyakan laporan, atau sekadar mengobrol.
+mencatat transaksi, transfer antar kantong, menanyakan laporan, atau sekadar mengobrol.
 
 ### Contoh mencatat
 
@@ -205,6 +244,14 @@ kemarin beli buku 120k
 bayar listrik 350rb dari Bank Jago
 3 hari lalu grab ke kantor 28k
 makan siang 45k jam 12:30
+kopi 25k, parkir 5k, gajian 5jt
+```
+
+### Contoh transfer
+
+```
+pindah 100k dari Cash ke GoPay
+/transfer 200k dari Bank Jago ke BSI buat bayar kosan
 ```
 
 ### Contoh bertanya

@@ -444,11 +444,24 @@ function momonCatatTransaksi(user, raw) {
         );
     }
 
-    const t = momonNormalisasiTransaksi(user, raw);
+    const kantongInput = String(raw.kantong || "").trim();
+    const kantong = user.kantong.find((k) => k.toLowerCase() === kantongInput.toLowerCase());
+    if (!kantong) {
+        return momonKirim(
+            user.chatId,
+            [
+                `🙈 <b>Kantong "${momonEsc(kantongInput || "-")}" belum terdaftar.</b>`,
+                `Kantong yang Momon kenal: ${user.kantong.map((k) => momonEsc(k)).join(", ")}.`,
+            ].join("\n"),
+        );
+    }
+
+    const nominal = Number(raw.nominal);
+    const t = momonLengkapiTransaksi(raw);
     const now = new Date();
     const sheet = momonSheetData(user);
 
-    sheet.appendRow([t.tanggal, t.tipe, t.kategori, t.kantong, t.nominal, t.deskripsi, now]);
+    sheet.appendRow([t.tanggal, t.tipe, t.kategori, kantong, nominal, t.deskripsi, now]);
 
     const icon = t.tipe === "Pemasukan" ? "🟢" : "🔴";
     const backdate =
@@ -458,9 +471,9 @@ function momonCatatTransaksi(user, raw) {
     const baris = [];
     baris.push(`✅ <b>Sip, dicatat ya ${momonEsc(user.nama)}!</b> ${momonSemangat()}`);
     baris.push("");
-    baris.push(`${icon} ${t.tipe} <b>Rp ${momonRupiah(t.nominal)}</b> — <i>${momonEsc(t.deskripsi)}</i>`);
+    baris.push(`${icon} ${t.tipe} <b>Rp ${momonRupiah(nominal)}</b> — <i>${momonEsc(t.deskripsi)}</i>`);
     baris.push(`📂 Kategori: ${momonEsc(t.kategori)}`);
-    baris.push(`💼 Kantong: ${momonEsc(t.kantong)}`);
+    baris.push(`💼 Kantong: ${momonEsc(kantong)}`);
     baris.push(
         `🗓️ ${Utilities.formatDate(t.tanggal, MOMON_TIMEZONE, "d MMMM yyyy, HH:mm")}${backdate ? " (backdate)" : ""}`,
     );
@@ -474,8 +487,13 @@ function momonCatatTransaksi(user, raw) {
     });
 }
 
-/** Validasi hasil AI terhadap daftar tertutup; tiap penyesuaian dicatat di `peringatan`. */
-function momonNormalisasiTransaksi(user, raw) {
+/**
+ * Lengkapi tipe/kategori/tanggal/deskripsi secara longgar — ini yang "dibantu AI":
+ * kalau hasil ekstraksi AI meleset, Momon merapikan ke nilai yang masuk akal
+ * (bukan menolak) dan mencatat penyesuaiannya di `peringatan`. Hanya kantong
+ * & nominal yang divalidasi ketat (ditangani terpisah di momonCatatTransaksi).
+ */
+function momonLengkapiTransaksi(raw) {
     const peringatan = [];
 
     const tipeRaw = String(raw.tipe || "").toLowerCase();
@@ -490,20 +508,11 @@ function momonNormalisasiTransaksi(user, raw) {
             peringatan.push(`Kategori "${kategoriInput}" belum terdaftar, Momon catat sebagai "Lainnya".`);
     }
 
-    const kantongInput = String(raw.kantong || "").trim();
-    let kantong = user.kantong.find((k) => k.toLowerCase() === kantongInput.toLowerCase());
-    if (!kantong) {
-        kantong = user.kantong[0];
-        peringatan.push(`Kantong "${kantongInput || "-"}" belum terdaftar, Momon catat ke "${kantong}".`);
-    }
-
     const tanggal = momonResolveTanggalWaktu(raw, peringatan);
 
     return {
         tipe: tipe,
         kategori: kategori,
-        kantong: kantong,
-        nominal: Number(raw.nominal),
         deskripsi: String(raw.deskripsi || "-").trim() || "-",
         tanggal: tanggal,
         peringatan: peringatan,

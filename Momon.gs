@@ -324,7 +324,10 @@ KONTEKS WAKTU:
 
 ${aturanIntent}
 
-JIKA intent = "transaksi", isi object "transaksi":
+JIKA intent = "transaksi", isi array "transaksi" dengan SATU OBJECT PER TRANSAKSI.
+Satu pesan bisa menyebut lebih dari satu transaksi sekaligus (dipisah "lalu", koma, baris baru, dst) —
+pisahkan tiap transaksi jadi object tersendiri dalam array ini. Kalau cuma satu transaksi, array cukup
+berisi satu object. Tiap object:
 - "tipe": PERSIS "Pemasukan" atau "Pengeluaran".
 - "kategori": PERSIS satu dari daftar sesuai tipe (dilarang mengarang):
   - Pengeluaran: ${JSON.stringify(MOMON_KATEGORI_PENGELUARAN)}
@@ -361,7 +364,7 @@ JIKA intent = "laporan", isi object "laporan" (ini dipakai untuk memfilter data,
 Pesan ${user.nama}: "${teks}"
 
 Jawab HANYA JSON murni, tanpa markdown, tanpa teks lain:
-{"intent":"obrolan","transaksi":{"tipe":"","kategori":"","kantong":"","nominal":0,"deskripsi":"","tanggal":"","waktu":""},"transfer":{"dari":"","ke":"","nominal":0,"deskripsi":"","tanggal":"","waktu":""},"laporan":{"judul":"","dari":"","sampai":"","tipe":"Semua","kategori":[],"kantong":[],"kata_kunci":"","min_nominal":0,"max_nominal":0,"kelompok":"kategori","urut":"nominal_desc","limit":0,"rincian":true},"reply":""}`;
+{"intent":"obrolan","transaksi":[{"tipe":"","kategori":"","kantong":"","nominal":0,"deskripsi":"","tanggal":"","waktu":""}],"transfer":{"dari":"","ke":"","nominal":0,"deskripsi":"","tanggal":"","waktu":""},"laporan":{"judul":"","dari":"","sampai":"","tipe":"Semua","kategori":[],"kantong":[],"kata_kunci":"","min_nominal":0,"max_nominal":0,"kelompok":"kategori","urut":"nominal_desc","limit":0,"rincian":true},"reply":""}`;
 
     const jawaban = momonPanggilGemini(config, prompt, 0.2);
     if (!jawaban.ok) {
@@ -430,61 +433,123 @@ function momonPanggilGemini(config, prompt, suhu) {
 //  PENCATATAN TRANSAKSI
 // ============================================================
 
-function momonCatatTransaksi(user, raw) {
-    raw = raw || {};
+/** `daftarRaw` biasanya array (AI bisa mengirim beberapa transaksi dari satu pesan),
+ *  tapi tetap menerima object tunggal untuk jaga-jaga kalau AI lupa membungkusnya. */
+function momonCatatTransaksi(user, daftarRaw) {
+    const daftar = (Array.isArray(daftarRaw) ? daftarRaw : [daftarRaw]).filter((r) => r && typeof r === "object");
 
-    if (!raw.nominal || isNaN(raw.nominal) || Number(raw.nominal) <= 0) {
+    if (!daftar.length) {
         return momonKirim(
             user.chatId,
             [
-                "🤏 <b>Nominalnya belum kebaca nih!</b>",
+                "🤏 <b>Transaksinya belum kebaca nih!</b>",
                 "Coba tulis angkanya, contoh:",
                 "<pre><code>jajan 50k</code></pre>",
             ].join("\n"),
         );
     }
 
-    const kantongInput = String(raw.kantong || "").trim();
-    const kantong = user.kantong.find((k) => k.toLowerCase() === kantongInput.toLowerCase());
-    if (!kantong) {
-        return momonKirim(
-            user.chatId,
-            [
-                `🙈 <b>Kantong "${momonEsc(kantongInput || "-")}" belum terdaftar.</b>`,
-                `Kantong yang Momon kenal: ${user.kantong.map((k) => momonEsc(k)).join(", ")}.`,
-            ].join("\n"),
-        );
-    }
-
-    const nominal = Number(raw.nominal);
-    const t = momonLengkapiTransaksi(raw);
-    const now = new Date();
     const sheet = momonSheetData(user);
+    const now = new Date();
+    const berhasil = [];
+    const gagal = [];
 
-    sheet.appendRow([t.tanggal, t.tipe, t.kategori, kantong, nominal, t.deskripsi, now]);
+    daftar.forEach((raw, i) => {
+        const nomor = i + 1;
 
-    const icon = t.tipe === "Pemasukan" ? "🟢" : "🔴";
-    const backdate =
-        Utilities.formatDate(t.tanggal, MOMON_TIMEZONE, "yyyy-MM-dd") !==
-        Utilities.formatDate(now, MOMON_TIMEZONE, "yyyy-MM-dd");
+        if (!raw.nominal || isNaN(raw.nominal) || Number(raw.nominal) <= 0) {
+            gagal.push(`#${nomor} nominalnya belum kebaca`);
+            return;
+        }
 
-    const baris = [];
-    baris.push(`✅ <b>Sip, dicatat ya ${momonEsc(user.nama)}!</b> ${momonSemangat()}`);
-    baris.push("");
-    baris.push(`${icon} ${t.tipe} <b>Rp ${momonRupiah(nominal)}</b> — <i>${momonEsc(t.deskripsi)}</i>`);
-    baris.push(`📂 Kategori: ${momonEsc(t.kategori)}`);
-    baris.push(`💼 Kantong: ${momonEsc(kantong)}`);
-    baris.push(
-        `🗓️ ${Utilities.formatDate(t.tanggal, MOMON_TIMEZONE, "d MMMM yyyy, HH:mm")}${backdate ? " (backdate)" : ""}`,
+        const kantongInput = String(raw.kantong || "").trim();
+        const kantong = user.kantong.find((k) => k.toLowerCase() === kantongInput.toLowerCase());
+        if (!kantong) {
+            gagal.push(`#${nomor} kantong "${momonEsc(kantongInput || "-")}" belum terdaftar`);
+            return;
+        }
+
+        const nominal = Number(raw.nominal);
+        const t = momonLengkapiTransaksi(raw);
+        sheet.appendRow([t.tanggal, t.tipe, t.kategori, kantong, nominal, t.deskripsi, now]);
+
+        berhasil.push({
+            tipe: t.tipe,
+            kategori: t.kategori,
+            kantong: kantong,
+            nominal: nominal,
+            deskripsi: t.deskripsi,
+            tanggal: t.tanggal,
+            peringatan: t.peringatan,
+        });
+    });
+
+    momonKirim(
+        user.chatId,
+        momonRenderHasilTransaksi(user, berhasil, gagal, now),
+        berhasil.length ? { tombol: { teks: "📊 Lihat di Google Sheet", url: momonUrlSheet(sheet) } } : undefined,
     );
-    if (t.peringatan.length) {
+}
+
+/** Rangkum hasil pencatatan satu atau banyak transaksi jadi satu pesan balasan. */
+function momonRenderHasilTransaksi(user, berhasil, gagal, now) {
+    const baris = [];
+
+    if (berhasil.length === 1 && !gagal.length) {
+        const t = berhasil[0];
+        const icon = t.tipe === "Pemasukan" ? "🟢" : "🔴";
+        const backdate =
+            Utilities.formatDate(t.tanggal, MOMON_TIMEZONE, "yyyy-MM-dd") !==
+            Utilities.formatDate(now, MOMON_TIMEZONE, "yyyy-MM-dd");
+
+        baris.push(`✅ <b>Sip, dicatat ya ${momonEsc(user.nama)}!</b> ${momonSemangat()}`);
         baris.push("");
-        baris.push("⚠️ " + t.peringatan.join(" "));
+        baris.push(`${icon} ${t.tipe} <b>Rp ${momonRupiah(t.nominal)}</b> — <i>${momonEsc(t.deskripsi)}</i>`);
+        baris.push(`📂 Kategori: ${momonEsc(t.kategori)}`);
+        baris.push(`💼 Kantong: ${momonEsc(t.kantong)}`);
+        baris.push(
+            `🗓️ ${Utilities.formatDate(t.tanggal, MOMON_TIMEZONE, "d MMMM yyyy, HH:mm")}${backdate ? " (backdate)" : ""}`,
+        );
+        if (t.peringatan.length) {
+            baris.push("");
+            baris.push("⚠️ " + t.peringatan.join(" "));
+        }
+        return baris.join("\n");
     }
 
-    momonKirim(user.chatId, baris.join("\n"), {
-        tombol: { teks: "📊 Lihat di Google Sheet", url: momonUrlSheet(sheet) },
-    });
+    if (berhasil.length) {
+        baris.push(`✅ <b>${berhasil.length} transaksi dicatat ya ${momonEsc(user.nama)}!</b> ${momonSemangat()}`);
+        baris.push("");
+        let totalMasuk = 0;
+        let totalKeluar = 0;
+        berhasil.forEach((t) => {
+            const icon = t.tipe === "Pemasukan" ? "🟢" : "🔴";
+            if (t.tipe === "Pemasukan") totalMasuk += t.nominal;
+            else totalKeluar += t.nominal;
+            const backdate =
+                Utilities.formatDate(t.tanggal, MOMON_TIMEZONE, "yyyy-MM-dd") !==
+                Utilities.formatDate(now, MOMON_TIMEZONE, "yyyy-MM-dd");
+            baris.push(
+                `${icon} Rp ${momonRupiah(t.nominal)} — <i>${momonEsc(t.deskripsi)}</i> <i>(${momonEsc(t.kategori)} · ${momonEsc(t.kantong)}${backdate ? ", backdate" : ""})</i>`,
+            );
+            if (t.peringatan.length) baris.push(`   ⚠️ ${momonEsc(t.peringatan.join(" "))}`);
+        });
+        baris.push("");
+        if (totalMasuk) baris.push(`🟢 Total masuk: <b>Rp ${momonRupiah(totalMasuk)}</b>`);
+        if (totalKeluar) baris.push(`🔴 Total keluar: <b>Rp ${momonRupiah(totalKeluar)}</b>`);
+    }
+
+    if (gagal.length) {
+        if (berhasil.length) baris.push("");
+        baris.push(`⚠️ <b>${gagal.length} transaksi tidak tercatat:</b>`);
+        gagal.forEach((g) => baris.push(`• ${g}`));
+    }
+
+    if (!berhasil.length && !gagal.length) {
+        baris.push(`🤷 Nggak ada transaksi yang kebaca, ${momonEsc(user.nama)}.`);
+    }
+
+    return baris.join("\n");
 }
 
 /**
@@ -1143,6 +1208,7 @@ function momonBantuan(user) {
             "<pre><code>kopi 25k pakai GoPay</code></pre>",
             "<pre><code>gajian 5jt</code></pre>",
             "<pre><code>kemarin beli buku 120k</code></pre>",
+            "<pre><code>kopi 25k, parkir 5k, gajian 5jt</code></pre>",
             "",
             "<b>🔄 Transfer antar kantong</b> — tulis atau pakai /transfer:",
             "<pre><code>pindah 100k dari Cash ke GoPay</code></pre>",

@@ -220,7 +220,7 @@ function momonRoute(user, teks) {
     if (lower === "/start" || lower === "/help" || lower.indexOf("/help") === 0) {
         return momonBantuan(user);
     }
-    if (lower.indexOf("/saldo") === 0) return momonLaporanSaldo(user);
+    if (lower.indexOf("/saldo") === 0) return momonLaporanSaldo(user, teks.slice("/saldo".length).trim().length > 0);
     if (lower.indexOf("/sheet") === 0) return momonKirimLinkSheet(user);
     if (lower.indexOf("/kategori") === 0) return momonDaftarKategori(user);
     if (lower.indexOf("/kantong") === 0) return momonDaftarKantong(user);
@@ -1153,7 +1153,13 @@ function momonKirimLinkSheet(user) {
 //  LAPORAN CEPAT LAIN
 // ============================================================
 
-function momonLaporanSaldo(user) {
+/** Kantong tabungan/investasi disembunyikan dari /saldo secara default (bukan uang siap pakai). */
+function momonAdalahKantongTabungan(namaKantong) {
+    const nama = String(namaKantong || "").toLowerCase();
+    return nama.indexOf("tabungan") >= 0 || nama.indexOf("investasi") >= 0;
+}
+
+function momonLaporanSaldo(user, sertakanTabungan) {
     const rows = momonBacaTransaksi(user);
     if (!rows.length) {
         return momonKirim(user.chatId, `📭 Belum ada data, ${momonEsc(user.nama)}. Yuk catat transaksi pertamamu! 🌱`);
@@ -1170,17 +1176,33 @@ function momonLaporanSaldo(user) {
 
     const baris = [`💼 <b>Saldo Kantong — ${momonEsc(user.nama)}</b>`, ""];
     let total = 0;
+    let disembunyikan = 0;
 
     user.kantong.forEach((k) => {
+        if (!sertakanTabungan && momonAdalahKantongTabungan(k)) {
+            disembunyikan++;
+            return;
+        }
         baris.push(`<b>${momonEsc(k)}:</b> Rp ${momonRupiah(saldo[k])}`);
         total += saldo[k];
     });
     Object.keys(saldo)
         .filter((k) => user.kantong.indexOf(k) < 0)
         .forEach((k) => {
+            if (!sertakanTabungan && momonAdalahKantongTabungan(k)) {
+                disembunyikan++;
+                return;
+            }
             baris.push(`<b>${momonEsc(k)}</b> <i>(tidak terdaftar)</i>: Rp ${momonRupiah(saldo[k])}`);
             total += saldo[k];
         });
+
+    if (disembunyikan) {
+        baris.push("");
+        baris.push(
+            `<i>🏦 ${disembunyikan} kantong tabungan/investasi disembunyikan dari total ini. Ketik <code>/saldo semua</code> untuk lihat.</i>`,
+        );
+    }
 
     baris.push("");
     baris.push(`<pre><code>TOTAL: Rp ${momonRupiah(total)}</code></pre>`);
@@ -1233,7 +1255,7 @@ function momonBantuan(user) {
             "<pre><code>rekap transportasi 3 bulan terakhir</code></pre>",
             "",
             "<b>⚡ Perintah cepat</b>",
-            "/saldo — saldo tiap kantong",
+            "/saldo — saldo tiap kantong (tabungan/investasi disembunyikan, pakai /saldo semua kalau mau lihat)",
             "/hari — rekap hari ini",
             "/minggu — rekap minggu ini",
             "/bulan — rekap bulan ini",

@@ -629,9 +629,11 @@ function momonResolveTanggalWaktu(raw, peringatan) {
 
 /**
  * Transfer antar kantong milik user sendiri — dicatat sebagai sepasang baris
- * (Pengeluaran di kantong asal, Pemasukan di kantong tujuan) dengan kategori
- * khusus MOMON_KATEGORI_TRANSFER supaya mudah dibedakan dari transaksi biasa
- * dan tidak mengubah saldo total (hanya berpindah antar kantong).
+ * bertipe "Transfer" (bukan Pemasukan/Pengeluaran) di kantong asal & tujuan,
+ * supaya tidak ikut terhitung sebagai uang masuk/keluar betulan dan tidak
+ * mengubah saldo total (hanya berpindah antar kantong). Arahnya (keluar/masuk)
+ * ditandai lewat awalan deskripsi "Transfer ke "/"Transfer dari ", lihat
+ * momonTransferMasuk().
  */
 function momonTransfer(user, raw) {
     raw = raw || {};
@@ -679,8 +681,8 @@ function momonTransfer(user, raw) {
 
     const sheet = momonSheetData(user);
     const now = new Date();
-    sheet.appendRow([tanggal, "Pengeluaran", MOMON_KATEGORI_TRANSFER, dari, nominal, catatanDari, now]);
-    sheet.appendRow([tanggal, "Pemasukan", MOMON_KATEGORI_TRANSFER, ke, nominal, catatanKe, now]);
+    sheet.appendRow([tanggal, "Transfer", MOMON_KATEGORI_TRANSFER, dari, nominal, catatanDari, now]);
+    sheet.appendRow([tanggal, "Transfer", MOMON_KATEGORI_TRANSFER, ke, nominal, catatanKe, now]);
 
     const backdate =
         Utilities.formatDate(tanggal, MOMON_TIMEZONE, "yyyy-MM-dd") !==
@@ -811,13 +813,21 @@ function momonBacaTransaksi(user) {
         const nominal = Number(data[i][4]) || 0;
         if (nominal <= 0) continue;
 
+        const kategori = String(data[i][2] || "Lainnya");
+        const tipe =
+            kategori === MOMON_KATEGORI_TRANSFER
+                ? "Transfer"
+                : String(data[i][1]).toLowerCase().indexOf("masuk") >= 0
+                  ? "Pemasukan"
+                  : "Pengeluaran";
+
         out.push({
             baris: i + 2,
             tanggal: tanggal,
             tgl: Utilities.formatDate(tanggal, MOMON_TIMEZONE, "yyyy-MM-dd"),
             bulan: Utilities.formatDate(tanggal, MOMON_TIMEZONE, "yyyy-MM"),
-            tipe: String(data[i][1]).toLowerCase().indexOf("masuk") >= 0 ? "Pemasukan" : "Pengeluaran",
-            kategori: String(data[i][2] || "Lainnya"),
+            tipe: tipe,
+            kategori: kategori,
             kantong: String(data[i][3] || "-"),
             nominal: nominal,
             deskripsi: String(data[i][5] || "-"),
@@ -851,9 +861,14 @@ function momonSaring(rows, spec) {
  * bukan dibelanjakan) — keduanya tidak boleh dihitung sebagai pengeluaran/pemasukan.
  */
 function momonBukanArusKas(r) {
-    if (r.kategori === MOMON_KATEGORI_TRANSFER) return true;
+    if (r.tipe === "Transfer") return true;
     if (r.tipe === "Pengeluaran" && r.kategori.toLowerCase() === "investasi") return true;
     return false;
+}
+
+/** Arah satu baris transfer: true kalau baris ini uang MASUK ke kantongnya. */
+function momonTransferMasuk(r) {
+    return r.deskripsi.indexOf("Transfer dari ") === 0;
 }
 
 function momonHitungRingkasan(rows) {
@@ -968,7 +983,7 @@ function momonRenderLaporan(user, spec, rows, ringkas, grup, rincian) {
         baris.push("");
         baris.push("<b>Rincian</b>");
         tampil.forEach((r) => {
-            const ikon = r.tipe === "Pemasukan" ? "🟢" : "🔴";
+            const ikon = r.tipe === "Transfer" ? "🔄" : r.tipe === "Pemasukan" ? "🟢" : "🔴";
             const tgl = Utilities.formatDate(r.tanggal, MOMON_TIMEZONE, "dd/MM");
             baris.push(
                 `${ikon} <code>${tgl}</code> Rp ${momonRupiah(r.nominal)} — ${momonEsc(r.deskripsi)} <i>(${momonEsc(r.kategori)})</i>`,
@@ -1172,7 +1187,8 @@ function momonLaporanSaldo(user, sertakanTabungan) {
     rows.forEach((r) => {
         const kantong = user.kantong.find((k) => k.toLowerCase() === r.kantong.toLowerCase()) || r.kantong;
         if (!(kantong in saldo)) saldo[kantong] = 0;
-        saldo[kantong] += r.tipe === "Pemasukan" ? r.nominal : -r.nominal;
+        const masuk = r.tipe === "Transfer" ? momonTransferMasuk(r) : r.tipe === "Pemasukan";
+        saldo[kantong] += masuk ? r.nominal : -r.nominal;
     });
 
     const baris = [`💼 <b>Saldo Kantong — ${momonEsc(user.nama)}</b>`, ""];

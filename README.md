@@ -153,18 +153,21 @@ Untuk `/setcommands`, pilih bot kamu lalu kirim blok berikut **persis seperti in
 (format `nama - deskripsi`, nama harus huruf kecil tanpa `/`):
 
 ```
-start - Panduan singkat
-help - Panduan & daftar perintah
-saldo - Saldo tiap kantong + total
-hari - Rekap hari ini
-minggu - Rekap minggu ini
-bulan - Rekap bulan ini
-laporan - Laporan cerdas, tambahkan pertanyaan bebas
-transfer - Transfer saldo antar kantong
-sheet - Tombol ke Google Sheet
-kategori - Daftar kategori yang berlaku
-kantong - Daftar kantong milikmu
-id - Tampilkan chat id
+start - 👋 Panduan singkat
+help - 📖 Panduan & daftar perintah
+saldo - 💰 Saldo tiap kantong + total
+hari - 📅 Rekap hari ini
+minggu - 🗓 Rekap minggu ini
+bulan - 📆 Rekap bulan ini
+laporan - 🧠 Laporan cerdas, tambahkan pertanyaan bebas
+transfer - 🔄 Transfer saldo antar kantong
+edit - ✏️ Perbaiki transaksi: /edit <id> <koreksi>
+hapus - 🗑 Hapus transaksi: /hapus <id>
+debug - 🐞 Status Momon: model, config, error terakhir
+sheet - 📂 Tombol ke Google Sheet
+kategori - 🏷 Daftar kategori yang berlaku
+kantong - 👛 Daftar kantong milikmu
+id - 🆔 Tampilkan chat id
 ```
 
 > Daftar `/setcommands` ini murni kosmetik (menu "/" di aplikasi Telegram) — perilaku

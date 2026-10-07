@@ -61,18 +61,24 @@ kategori, nilainya dipaksa ke `Lainnya` dan kamu diberi tahu lewat peringatan �
 
 ```
 .
-├── Config.gs             # konstanta MOMON_* + momonConfig/momonUser — yang perlu disetel
-├── Momon.gs              # seluruh logika bot
-├── appsscript.json       # manifest Apps Script (timezone + konfigurasi Web App)
+├── app/                  # isi project Apps Script — ini yang di-push clasp
+│   ├── Config.gs         # konstanta MOMON_* + momonConfig/momonUser — yang perlu disetel
+│   ├── Momon.gs          # seluruh logika bot
+│   └── appsscript.json   # manifest Apps Script (timezone + konfigurasi Web App)
 ├── .clasp.json.example   # contoh config clasp — salin ke .clasp.json
 ├── .gitignore
 ├── LICENSE               # CC BY-NC-SA 4.0 (teks legal resmi)
 ├── NOTICE                # atribusi yang wajib ikut saat didistribusikan ulang
 ├── MIGRASI.md            # cara update project Apps Script yang sudah jalan
+├── TODO.md               # catatan keputusan tiap rilis
 └── README.md
 ```
 
 Tidak ada dependency, tidak ada build step.
+
+Semua yang masuk ke Apps Script ada di **`app/`**, terpisah dari dokumentasi di root —
+makanya `.clasp.json` memakai `"rootDir": "app"`. Berkas di luar `app/` tidak ikut
+ter-push, jadi README & catatan lain tidak nyasar jadi berkas `.gs` di project.
 
 `Config.gs` dipisah supaya semua yang perlu disetel ada di satu tempat yang pendek.
 Apps Script menaruh semua berkas `.gs` di **satu ruang global** — tidak ada import/export,
@@ -109,7 +115,7 @@ seluruh project. Urutan berkas tidak berpengaruh.
    tempel seluruh isi `Config.gs`.
 
 4. Klik ⚙️ **Project Settings** → centang *Show "appsscript.json" manifest file*,
-   lalu samakan isinya dengan `appsscript.json` di repo ini.
+   lalu samakan isinya dengan `app/appsscript.json` di repo ini.
 
 > Sudah punya Momon versi lama yang konstantanya masih di dalam `Momon.gs`? Jangan
 > tambahkan `Config.gs` di sampingnya begitu saja — konstanta yang sama akan terdeklarasi
@@ -455,7 +461,7 @@ clasp pull                            # Apps Script -> lokal
 
 `.clasp.json` sudah masuk `.gitignore` karena berisi `scriptId` milik project pribadi.
 
-`clasp push` mengirim **seluruh isi folder** sebagai isi project — berkas yang kamu hapus
+`clasp push` mengirim **seluruh isi `app/`** sebagai isi project — berkas yang kamu hapus
 di lokal ikut hilang di Apps Script. Ingat, `push` saja belum mengganti bot yang live:
 Web App tetap menyajikan versi yang di-deploy sampai kamu menekan
 **Deploy → Manage deployments → ✏️ → New version → Deploy**.

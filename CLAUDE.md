@@ -26,7 +26,7 @@ Apps Script editor (or synced with `clasp`).
 npm install -g @google/clasp
 clasp login
 cp .clasp.json.example .clasp.json   # fill in scriptId from Project Settings, this file is gitignored
-clasp push                            # push Config.gs + Momon.gs -> Apps Script
+clasp push                            # push app/ (Config.gs + Momon.gs) -> Apps Script
 clasp pull                            # pull Apps Script -> local
 ```
 
@@ -77,8 +77,8 @@ Two files:
 
 | File | Contents |
 |---|---|
-| `Config.gs` | Everything meant to be tuned: all `MOMON_*` constants plus `momonConfig` / `momonDaftarUser` / `momonUser` / `momonSemuaUser` (~165 lines) |
-| `Momon.gs` | License header + all bot logic (~2935 lines) |
+| `app/Config.gs` | Everything meant to be tuned: all `MOMON_*` constants plus `momonConfig` / `momonDaftarUser` / `momonUser` / `momonSemuaUser` (~165 lines) |
+| `app/Momon.gs` | License header + all bot logic (~2935 lines) |
 
 Apps Script puts both in **one shared global scope**, so these are not modules: there is no
 import/export, either file can call the other's functions, and a name may only be declared once
@@ -88,7 +88,7 @@ initialised from another file's constant would become order-dependent and break.
 
 ## Architecture
 
-`Momon.gs` is organized into clearly marked sections (search for `====` banners). Request flow:
+`app/Momon.gs` is organized into clearly marked sections (search for `====` banners). Request flow:
 
 1. **Entry point** — Telegram calls the deployed Web App's `doPost(e)`, which calls
    `momonTerimaUpdate(e)`. Inline-button presses (`update.callback_query`) are split off first and

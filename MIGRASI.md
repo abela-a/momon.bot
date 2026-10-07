@@ -15,8 +15,10 @@ struktur berkas yang baru.
    dinyalakan di BotFather** — lihat langkah 4.
 
 ```
-Config.gs   konstanta MOMON_*, momonConfig/momonUser/momonSemuaUser   (~165 baris)
-Momon.gs    lisensi + seluruh logika bot                              (~2935 baris)
+app/
+├── Config.gs        konstanta MOMON_*, momonConfig/momonUser   (~165 baris)
+├── Momon.gs         lisensi + seluruh logika bot                (~2935 baris)
+└── appsscript.json  manifest
 ```
 
 > **Urutan berkas tidak berpengaruh.** Apps Script menaruh semua `.gs` di satu ruang
@@ -54,7 +56,7 @@ Makanya langkah 2B mengganti isi `Momon.gs` **lebih dulu**, baru membuat `Config
 Lewati kalau repo lokalmu sudah bersih dan ter-commit; `git` sudah jadi backup-nya.
 
 Kalau tidak: di Apps Script, **⋮ di samping nama project → Lihat riwayat versi**, atau
-salin isi `Momon.gs` ke berkas lokal. Rollback dibahas di bagian akhir.
+salin isi `Momon.gs` dari editor ke berkas lokal. Rollback dibahas di bagian akhir.
 
 ## Langkah 2 — Pindahkan kodenya
 
@@ -66,7 +68,7 @@ Pilih **salah satu**: 2A (clasp) jauh lebih gampang.
 clasp push
 ```
 
-`clasp push` mengirim **seluruh isi folder** sebagai isi project, jadi `Momon.gs` tertimpa
+`clasp push` mengirim **seluruh isi `app/`** sebagai isi project, jadi `Momon.gs` tertimpa
 dan `Config.gs` ikut terbuat sekaligus — tidak ada jendela di mana konstantanya dobel.
 Buka editornya dan pastikan daftar berkasnya persis `Config.gs` + `Momon.gs` +
 `appsscript.json`.
@@ -146,9 +148,9 @@ Kalau ada yang error, `/debug` menampilkan error terakhir (tersimpan di Script P
 Versi `Momon.gs` sebelum migrasi masih utuh di riwayat git:
 
 ```bash
-git log --oneline -- Momon.gs
-git show <commit>:Momon.gs > Momon.gs
-rm Config.gs
+git log --oneline -- app/Momon.gs Momon.gs
+git show <commit>:Momon.gs > app/Momon.gs
+rm app/Config.gs
 clasp push
 ```
 

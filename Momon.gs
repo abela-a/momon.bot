@@ -69,6 +69,11 @@ const MOMON_MODEL = "gemini-flash-lite-latest";
 // Gambar & suara butuh model yang lebih kuat dari flash-lite, tapi tetap kelas flash.
 const MOMON_MODEL_MEDIA = "gemini-flash-latest";
 
+// Gemini sesekali membalas 429/500/503 saat modelnya lagi penuh — itu sementara,
+// jadi dicoba ulang sebentar. Jangan dibesarkan: Telegram menganggap webhook
+// gagal kalau balasannya kelamaan, lalu mengirim ulang update yang sama.
+const MOMON_GEMINI_MAKS_PERCOBAAN = 3;
+
 // Kalau true, Momon menambahkan satu kalimat insight ceria dari AI di akhir
 // laporan. Angkanya TETAP dihitung oleh script (bukan AI), jadi selalu akurat.
 const MOMON_KOMENTAR_AI = true;
@@ -464,22 +469,39 @@ function momonPanggilGemini(config, prompt, suhu, opsi) {
         generationConfig: { responseMimeType: "application/json", temperature: suhu },
     };
 
-    let res;
-    try {
-        res = UrlFetchApp.fetch(url, {
-            method: "post",
-            contentType: "application/json",
-            payload: JSON.stringify(payload),
-            muteHttpExceptions: true,
-        });
-    } catch (err) {
-        Logger.log("Gagal menghubungi Gemini: " + err);
-        return { ok: false, pesan: "📡 Momon lagi susah sinyal ke layanan AI. Coba lagi sebentar lagi ya!" };
-    }
+    const permintaan = {
+        method: "post",
+        contentType: "application/json",
+        payload: JSON.stringify(payload),
+        muteHttpExceptions: true,
+    };
 
-    if (res.getResponseCode() !== 200) {
-        Logger.log("Gemini HTTP " + res.getResponseCode() + ": " + res.getContentText());
-        return { ok: false, pesan: `😣 Layanan AI lagi rewel (HTTP ${res.getResponseCode()}). Coba lagi nanti ya!` };
+    let res = null;
+    for (let percobaan = 1; percobaan <= MOMON_GEMINI_MAKS_PERCOBAAN; percobaan++) {
+        try {
+            res = UrlFetchApp.fetch(url, permintaan);
+        } catch (err) {
+            Logger.log("Gagal menghubungi Gemini: " + err);
+            return { ok: false, pesan: "📡 Momon lagi susah sinyal ke layanan AI. Coba lagi sebentar lagi ya!" };
+        }
+
+        const kode = res.getResponseCode();
+        if (kode === 200) break;
+
+        // 429 kena rate limit, 500/503 modelnya lagi penuh — ketiganya sementara.
+        const sementara = kode === 429 || kode === 500 || kode === 503;
+        Logger.log(`Gemini HTTP ${kode} (percobaan ${percobaan}): ` + res.getContentText());
+
+        if (!sementara || percobaan === MOMON_GEMINI_MAKS_PERCOBAAN) {
+            return {
+                ok: false,
+                pesan: sementara
+                    ? "😵‍💫 <b>Layanan AI-nya lagi penuh.</b>\nIni dari sananya, bukan catatanmu — tunggu sebentar lalu kirim ulang ya!"
+                    : `😣 Layanan AI lagi rewel (HTTP ${kode}). Coba lagi nanti ya!`,
+            };
+        }
+
+        Utilities.sleep(700 * percobaan);
     }
 
     let body;

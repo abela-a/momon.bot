@@ -277,9 +277,12 @@ function momonChatIdDariUpdate(update) {
 function momonRoute(user, teks) {
     const lower = teks.toLowerCase();
 
-    // Kalau user menekan "✏️ Edit" di preview, pesan teks berikutnya adalah koreksinya.
+    // Kalau user menekan "✏️ Edit", pesan teks berikutnya adalah koreksinya —
+    // untuk draft yang belum tersimpan (menungguKoreksi) maupun untuk baris yang
+    // sudah ada di sheet (jenis "koreksiBaris").
     if (teks.charAt(0) !== "/") {
         const pending = momonAmbilPending(user.chatId);
+        if (pending && pending.jenis === "koreksiBaris") return momonTerapkanKoreksiBaris(user, pending, teks);
         if (pending && pending.menungguKoreksi) return momonTerapkanKoreksi(user, pending, teks);
     }
 
@@ -1248,14 +1251,20 @@ function momonTanganiCallback(cq) {
     const pending = momonAmbilPending(chatId);
     const aksi = String(cq.data || "");
 
-    // Tombol "🗑️ Hapus" menempel di pesan HASIL, bukan di draft — jadi sengaja
-    // diproses sebelum pemeriksaan draft di bawah, supaya tetap bisa ditekan
-    // berapa lama pun setelah transaksinya dicatat. Ia tidak menghapus apa pun
-    // sendiri: cuma pintu masuk ke konfirmasi /hapus yang sudah ada.
+    // Tombol "✏️ Edit" dan "🗑️ Hapus" menempel di pesan HASIL, bukan di draft —
+    // jadi sengaja diproses sebelum pemeriksaan draft di bawah, supaya tetap bisa
+    // ditekan berapa lama pun setelah transaksinya dicatat. Keduanya tidak menulis
+    // apa pun sendiri: cuma pintu masuk ke konfirmasi/koreksi yang sudah ada.
     const mintaHapus = aksi.match(/^hapus:(\d+)$/);
     if (mintaHapus) {
         momonJawabCallback(cq.id, "Konfirmasi dulu ya");
         return momonPerintahHapus(user, mintaHapus[1]);
+    }
+
+    const mintaEdit = aksi.match(/^edit:(\d+)$/);
+    if (mintaEdit) {
+        momonJawabCallback(cq.id, "Kirim koreksinya ya");
+        return momonMintaKoreksiBaris(user, Number(mintaEdit[1]));
     }
 
     // Draft hangus setelah MOMON_PREVIEW_TTL_DETIK, dan draft baru menimpa yang
@@ -1352,6 +1361,40 @@ function momonTerapkanKoreksi(user, pending, teks) {
     momonTampilkanPreview(user, pending);
 }
 
+/**
+ * Tombol "✏️ Edit" di pesan hasil: tandai baris mana yang mau dikoreksi, lalu
+ * tunggu pesan teks biasa sebagai koreksinya — tanpa memaksa user mengetik
+ * (atau menyebut) "@namabot" seperti kalau chatbox-nya diisi lewat inline mode.
+ *
+ * Disimpan di slot pending yang sama dengan draft foto/suara, jadi menekan ✏️
+ * membatalkan draft yang mungkin masih menggantung. Itu memang disengaja: satu
+ * chat hanya boleh punya satu hal yang sedang ditunggu Momon.
+ */
+function momonMintaKoreksiBaris(user, id) {
+    const pending = { jenis: "koreksiBaris", id: id };
+    pending.messageId = momonKirim(
+        user.chatId,
+        [
+            `✏️ <b>Mau diubah apanya dari transaksi #${id}?</b>`,
+            "Tulis koreksinya sebagai pesan biasa, contoh:",
+            "<pre><code>nominalnya 30rb, kategorinya Transportasi</code></pre>",
+        ].join("\n"),
+        { tombolAksi: [[{ teks: "❌ Batal", aksi: "batal" }]] },
+    );
+    momonSimpanPending(user.chatId, pending);
+}
+
+/** Pesan teks setelah "✏️ Edit" di pesan hasil = koreksi untuk baris pending.id. */
+function momonTerapkanKoreksiBaris(user, pending, teks) {
+    // Dibuang lebih dulu supaya pesan berikutnya kembali diperlakukan normal,
+    // apa pun hasil editnya.
+    momonHapusPending(user.chatId);
+    if (pending.messageId) {
+        momonEditPesan(user.chatId, pending.messageId, "⏳ <b>Momon lagi baca koreksinya…</b>");
+    }
+    momonPerintahEdit(user, `${pending.id} ${teks}`, pending.messageId || 0);
+}
+
 function momonOtakKoreksi(user, pending, teksKoreksi) {
     const hariIni = Utilities.formatDate(new Date(), MOMON_TIMEZONE, "yyyy-MM-dd");
     const draft = pending.jenis === "transfer" ? { transfer: pending.transfer } : { transaksi: pending.transaksi };
@@ -1394,11 +1437,17 @@ function momonPisahId(argumen) {
     return { id: Number(m[1]), sisa: m[2].trim() };
 }
 
-function momonPerintahEdit(user, argumen) {
+/**
+ * `penandaId` opsional: message_id yang sudah dipakai sebagai penanda progres
+ * (dipasang momonTerapkanKoreksiBaris), supaya hasilnya menimpa pesan itu alih-alih
+ * menumpuk pesan baru. 0/undefined = Momon memasang penandanya sendiri.
+ */
+function momonPerintahEdit(user, argumen, penandaId) {
     const arg = momonPisahId(argumen);
     if (!arg || !arg.sisa) {
-        return momonKirim(
+        return momonBalasKePenanda(
             user.chatId,
+            penandaId || 0,
             [
                 "✏️ <b>Edit transaksi</b>",
                 "Tulis id transaksinya lalu koreksinya:",
@@ -1412,12 +1461,17 @@ function momonPerintahEdit(user, argumen) {
     const sheet = momonSheetData(user);
     const target = momonCariBarisById(sheet, arg.id);
     if (!target) {
-        return momonKirim(user.chatId, `🔍 Momon tidak menemukan transaksi <code>#${arg.id}</code>.`);
+        return momonBalasKePenanda(
+            user.chatId,
+            penandaId || 0,
+            `🔍 Momon tidak menemukan transaksi <code>#${arg.id}</code>.`,
+        );
     }
 
     if (String(target.nilai[1]) === "Transfer") {
-        return momonKirim(
+        return momonBalasKePenanda(
             user.chatId,
+            penandaId || 0,
             [
                 `🔄 <b>Transaksi #${arg.id} itu baris transfer.</b>`,
                 "",
@@ -1437,7 +1491,7 @@ function momonPerintahEdit(user, argumen) {
         waktu: Utilities.formatDate(target.nilai[0], MOMON_TIMEZONE, "HH:mm"),
     };
 
-    const penanda = momonKirim(user.chatId, "⏳ <b>Momon lagi baca koreksinya…</b>");
+    const penanda = penandaId || momonKirim(user.chatId, "⏳ <b>Momon lagi baca koreksinya…</b>");
 
     const hasil = momonOtakEditBaris(user, lama, arg.sisa);
     if (!hasil || hasil.gagal) {
@@ -2601,9 +2655,10 @@ function momonJawabCallback(callbackId, teks) {
 }
 
 /**
- * Inline mode dipakai HANYA supaya tombol "✏️ Edit" bisa mengisi chatbox
- * (switch_inline_query_current_chat). Momon tidak menyediakan hasil inline apa pun,
- * jadi dropdown-nya dijawab kosong biar langsung tertutup, bukan berputar terus.
+ * Momon tidak memakai inline mode lagi (dulu: tombol "✏️ Edit" mengisi chatbox) dan
+ * tidak menyediakan hasil inline apa pun. Branch ini dipertahankan untuk bot yang
+ * inline mode-nya terlanjur menyala: dropdown-nya dijawab kosong biar langsung
+ * tertutup, bukan berputar terus.
  */
 function momonJawabInlineQuery(inlineId) {
     const config = momonConfig();
@@ -2650,9 +2705,12 @@ function momonUsernameBot() {
 }
 
 /**
- * Tombol "✏️ Edit" mengisi chatbox lewat switch_inline_query_current_chat, dan
- * Telegram SELALU menempelkan "@username " di depan isinya. Prefix itu dibuang di
- * sini supaya yang sampai ke momonRoute tetap "/edit 42 ..." seperti diketik manual.
+ * Buang "@namabot " di depan pesan, supaya "@MomonBot /saldo" sampai ke momonRoute
+ * sebagai "/saldo" biasa. Dulu ini wajib karena tombol "✏️ Edit" mengisi chatbox
+ * lewat switch_inline_query_current_chat dan Telegram SELALU menempelkan mention di
+ * depannya; sekarang tombol itu tidak lagi begitu, tapi jaring ini tetap dipasang —
+ * tombol lama di pesan-pesan terdahulu masih mengirim bentuk itu, dan user memang
+ * suka menyebut bot-nya.
  *
  * getMe hanya dipanggil kalau teksnya memang diawali "@", jadi update biasa tidak
  * kena biaya tambahan. Kalau getMe gagal, prefix cuma dibuang bila berakhiran "bot"
@@ -2677,8 +2735,8 @@ function momonLepasMentionBot(teks) {
  *   {teks, url}  -> buka tautan
  *   {teks, aksi} -> callback_data, ditangani momonTanganiCallback
  *   {teks, isi}  -> switch_inline_query_current_chat: ISI chatbox user dengan teks itu.
- * Untuk bentuk ketiga Telegram selalu menempelkan "@username " di depan isinya —
- * prefix itu ditanggalkan lagi di momonLepasMentionBot() saat pesannya masuk.
+ * Bentuk ketiga sudah tidak dipakai lagi: Telegram selalu menempelkan "@username "
+ * di depan isinya, yang jelek dilihat user. Disimpan kalau-kalau nanti perlu.
  */
 function momonTombolTelegram(t) {
     if (t.url) return { text: t.teks, url: t.url };
@@ -2701,10 +2759,15 @@ function momonReplyMarkup(opsi) {
  * atau baris yang barusan dihapus) — tombol ✏️/🗑️ disembunyikan.
  * `bisaEdit` false untuk transfer: momonPerintahEdit menolaknya karena transfer
  * menyentuh dua kantong sekaligus, jadi tombolnya pun tidak ditawarkan.
+ *
+ * Keduanya callback_data, bukan switch_inline_query_current_chat: mengisi chatbox
+ * lewat inline mode memaksa Telegram menempelkan "@namabot " di depan teks user,
+ * yang jelek dilihat. Jadi ✏️ cuma menandai baris mana yang mau dikoreksi, lalu
+ * pesan biasa berikutnya yang dipakai sebagai koreksinya.
  */
 function momonTombolHasil(sheet, id, bisaEdit) {
     const aksi = [];
-    if (id && bisaEdit) aksi.push({ teks: "✏️ Edit", isi: `/edit ${id} ` });
+    if (id && bisaEdit) aksi.push({ teks: "✏️ Edit", aksi: `edit:${id}` });
     if (id) aksi.push({ teks: "🗑️ Hapus", aksi: `hapus:${id}` });
 
     const tombolAksi = [];
@@ -2774,8 +2837,6 @@ function momonCekKonfigurasi() {
         masalah.push("Spreadsheet");
     }
 
-    // Tombol "✏️ Edit" memakai switch_inline_query_current_chat, yang cuma mengisi
-    // chatbox kalau inline mode sudah dinyalakan lewat /setinline di BotFather.
     if (config.BOT_TOKEN) {
         try {
             const res = UrlFetchApp.fetch(`https://api.telegram.org/bot${config.BOT_TOKEN}/getMe`, {
@@ -2788,10 +2849,12 @@ function momonCekKonfigurasi() {
                 masalah.push("MOMON_BOT_TOKEN");
             } else {
                 laporan.push(`✅ Bot: @${bot.username}`);
+                // Sekadar informasi: sejak tombol ✏️ Edit memakai callback_data,
+                // Momon tidak butuh inline mode sama sekali.
                 laporan.push(
                     bot.supports_inline_queries
-                        ? "✅ Inline mode: aktif (tombol ✏️ Edit bisa mengisi chatbox)"
-                        : '⚠️ Inline mode: MATI — jalankan /setinline di @BotFather, kalau tidak tombol "✏️ Edit" tidak mengisi chatbox',
+                        ? "ℹ️ Inline mode: aktif — tidak dipakai Momon, boleh dimatikan lewat /setinline"
+                        : "ℹ️ Inline mode: mati — memang tidak dibutuhkan",
                 );
             }
         } catch (err) {

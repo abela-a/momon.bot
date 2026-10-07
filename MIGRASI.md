@@ -11,8 +11,8 @@ struktur berkas yang baru.
    ke berkas baru. Murni pemindahan — tidak ada logika yang berubah dan nama fungsinya
    tetap sama persis.
 2. **Fitur baru dari rilis sebelumnya ikut terbawa**: notif progres (⏳ → 💾 → ✅) dan
-   tombol ✏️ Edit / 🗑️ Hapus / 📊 Sheet di balasan. Yang ✏️ Edit **butuh inline mode
-   dinyalakan di BotFather** — lihat langkah 4.
+   tombol ✏️ Edit / 🗑️ Hapus / 📊 Sheet di balasan. ✏️ Edit sekarang memakai callback
+   biasa, jadi inline mode **tidak** perlu dinyalakan — lihat langkah 4.
 
 ```
 app/
@@ -101,17 +101,17 @@ Ini langkah yang benar-benar mengganti bot yang live:
 URL webhook-nya tidak berubah, jadi **tidak perlu** menjalankan `momonPasangWebhook()`
 lagi.
 
-## Langkah 4 — Nyalakan inline mode (wajib, sekali saja)
+## Langkah 4 — Inline mode: tidak perlu lagi
 
-Tombol **✏️ Edit** memakai `switch_inline_query_current_chat` untuk mengisi kotak ketik.
-Itu cuma jalan kalau inline mode aktif:
+Tidak ada yang harus dikerjakan di sini.
 
-1. Chat [@BotFather](https://t.me/BotFather) → `/setinline`
-2. Pilih bot Momon-mu
-3. Isi placeholder bebas, mis. `koreksi transaksi…`
+Versi sebelumnya mewajibkan `/setinline` karena tombol **✏️ Edit** mengisi kotak ketik
+lewat `switch_inline_query_current_chat`, dan Telegram selalu menempelkan `@namabot ` di
+depan teks yang diketik user. Sekarang tombol itu memakai callback biasa: Momon balik
+bertanya "mau diubah apanya?", dan kamu menjawab dengan **pesan biasa**.
 
-Tombol lain (🗑️ Hapus, 📊 Sheet) tetap normal walau langkah ini dilewati — hanya ✏️ Edit
-yang tidak berfungsi.
+Kalau inline mode sudah telanjur dinyalakan, biarkan saja atau matikan lewat
+`/setinline` → pilih bot → `Disable`. Dua-duanya aman.
 
 ## Langkah 5 — Verifikasi
 
@@ -125,7 +125,7 @@ momonCekKonfigurasi()
 Yang harus terlihat:
 
 - `✅ Bot: @NamaBotmu`
-- `✅ Inline mode: aktif` — kalau masih `⚠️ MATI`, ulangi langkah 4
+- `ℹ️ Inline mode: ...` — apa pun isinya, tidak masalah
 - `🎉 Konfigurasi lengkap!`
 
 Lalu dari Telegram:
@@ -133,7 +133,7 @@ Lalu dari Telegram:
 | Uji | Yang diharapkan |
 |---|---|
 | `kopi 25k pakai GoPay` | Satu pesan berubah ⏳ → 💾 → ✅, lalu muncul tombol ✏️ / 🗑️ / 📊 |
-| Tekan ✏️ Edit | Kotak ketik terisi `@NamaBot /edit <id> ` |
+| Tekan ✏️ Edit | Momon bertanya "mau diubah apanya?"; balas pesan biasa, baris ikut berubah |
 | Tekan 🗑️ Hapus | Muncul konfirmasi ✅/❌ dulu, bukan langsung terhapus |
 | `/bulan` | Laporan tampil seperti biasa |
 | `/debug` | Status tampil tanpa error |

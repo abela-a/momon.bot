@@ -97,8 +97,9 @@ initialised from another file's constant would become order-dependent and break.
    Those two checks are the *only* access control, so a new entry point must gate itself the same
    way — the Web App itself must be deployed as "Anyone" so Telegram can reach it.
    `update.inline_query` is the one unauthenticated branch: it is answered with an empty result
-   list (`momonJawabInlineQuery`) and reads nothing, so it needs no `momonUser` gate — see the
-   inline-mode note under **Edit & delete**.
+   list (`momonJawabInlineQuery`) and reads nothing, so it needs no `momonUser` gate. Nothing
+   produces inline queries any more — the branch only exists for bots whose inline mode is still
+   switched on; see the note under **Edit & delete**.
 2. **Routing** — `momonRoute(user, teks)` dispatches slash commands (`/saldo`, `/hari`, `/laporan`,
    `/transfer`, `/edit`, `/hapus`, etc.) to their handlers; anything else goes to free-text handling.
 3. **Free text / AI** — `momonProsesTeksBebas` → `momonOtak(user, teks, paksaIntent)` makes a
@@ -126,21 +127,30 @@ initialised from another file's constant would become order-dependent and break.
    `MOMON_PREVIEW_TTL_DETIK`). `momonTanganiCallback` handles the button presses, rejecting any
    press whose `message_id` doesn't match the stored draft (stale/expired). Confirming calls
    `momonSimpanTransaksi`/`momonSimpanTransfer` — the same validated write path as typed text — then
-   rewrites the preview message in place via `momonEditPesan`. The `hapus:<id>` action is the one
-   deliberate exception to the stale-draft check: it is matched *before* it, because that button
-   lives on a result message rather than a draft and must stay pressable indefinitely. It writes
-   nothing itself — it just calls `momonPerintahHapus`, which raises the usual confirm preview.
+   rewrites the preview message in place via `momonEditPesan`. The `hapus:<id>` and `edit:<id>`
+   actions are the deliberate exceptions to the stale-draft check: they are matched *before* it,
+   because those buttons live on a result message rather than a draft and must stay pressable
+   indefinitely. Neither writes anything itself — they just call `momonPerintahHapus` (which raises
+   the usual confirm preview) and `momonMintaKoreksiBaris`.
 8. **Edit & delete** — rows carry a per-user sequential `ID`. `/edit <id> <free text>` reinterprets
    the row through Gemini and rewrites it (Transfer rows are refused — they touch two kantong);
    `/hapus <id>` always confirms first, and deleting one leg of a transfer deletes both
    (`momonCariPasanganTransfer`, matched on identical `Dicatat Pada` + nominal). Both are also
    reachable from the buttons `momonTombolHasil(sheet, id, bisaEdit)` attaches to every write
-   result (✏️ Edit / 🗑️ Hapus / 📊 Sheet). ✏️ uses `switch_inline_query_current_chat` to *fill*
-   the user's input box with `/edit <id> `, which has two consequences: **inline mode must be
-   enabled via `/setinline` in BotFather** (`momonCekKonfigurasi` warns while it is off), and
-   Telegram prepends `@username ` to whatever the user then sends — `momonLepasMentionBot` strips
-   it in `momonTerimaUpdate` so the text reaches `momonRoute` as a plain command. The button is
-   omitted when there is no single row to point at (multi-transaction results, transfers).
+   result (✏️ Edit / 🗑️ Hapus / 📊 Sheet), both as plain `callback_data`. ✏️ calls
+   `momonMintaKoreksiBaris`, which asks what to change and parks a `{jenis: "koreksiBaris", id}`
+   entry in the same one-per-chat pending slot as photo/voice drafts; the next non-slash text
+   message is routed to `momonTerapkanKoreksiBaris`, which forwards it to `momonPerintahEdit` as
+   `<id> <text>` along with the question's `message_id` as `penandaId`, so the answer overwrites
+   the question rather than stacking. The button is omitted when there is no single row to point
+   at (multi-transaction results, transfers).
+
+   ✏️ used to use `switch_inline_query_current_chat` to pre-fill the input box with `/edit <id> `.
+   That was dropped because Telegram unconditionally prepends `@username ` to whatever the user
+   then types, which is ugly in the chat log, and it made inline mode (`/setinline`) a setup
+   prerequisite. Inline mode is now unused. `momonLepasMentionBot` is kept anyway — buttons on
+   older messages still send that shape, and people mention bots by hand — as is the `{teks, isi}`
+   button form in `momonTombolTelegram`, which nothing currently emits.
 9. **Progress markers** — every action that touches the sheet rewrites *one* message rather than
    stacking new ones: ⏳ before the Gemini call (that's where the wait is), 💾 immediately before
    the write, then the result. The marker's `message_id` is threaded through as a trailing

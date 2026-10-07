@@ -6,9 +6,9 @@ See [README.md](README.md) for setup, usage, and configuration details.
 
 Disepakati & diimplementasikan 2026-10-08.
 
-> ⚠️ Sekali jalan setelah deploy: nyalakan inline mode lewat `/setinline` di
-> [@BotFather](https://t.me/BotFather). Tanpa ini tombol **✏️ Edit** tidak mengisi kotak
-> ketik. Verifikasi dengan `momonCekKonfigurasi()` — barisnya harus `✅ Inline mode: aktif`.
+> ⚠️ ~~Sekali jalan setelah deploy: nyalakan inline mode lewat `/setinline`.~~ **Dibatalkan
+> 2026-10-08** — tombol ✏️ Edit sekarang memakai callback biasa, inline mode tidak
+> dibutuhkan lagi. Lihat catatan di bawah bullet ✏️ Edit.
 >
 > Langkah update lengkapnya ada di [MIGRASI.md](MIGRASI.md).
 
@@ -37,6 +37,15 @@ Disepakati & diimplementasikan 2026-10-08.
     tombol callback tidak menyentuh kotak ketik sama sekali). Harganya: inline mode wajib
     aktif, dan Telegram menempelkan `@username ` di depan teksnya — ditanggalkan lagi oleh
     `momonLepasMentionBot`.
+
+    **Direvisi 2026-10-08:** harganya ternyata tidak sepadan — `@namabot ` di depan tiap
+    koreksi mengotori riwayat chat, dan `/setinline` jadi syarat pemasangan. Diganti
+    callback `edit:<id>`: Momon balik bertanya "mau diubah apanya?" lalu memakai pesan
+    biasa berikutnya sebagai koreksi (`momonMintaKoreksiBaris` →
+    `momonTerapkanKoreksiBaris` → `momonPerintahEdit`). Kotak ketik memang tidak terisi
+    otomatis lagi, tapi user juga tidak perlu mengetik `/edit <id>` sendiri. Inline mode
+    tidak dipakai sama sekali sekarang; `momonLepasMentionBot` dan bentuk tombol
+    `{teks, isi}` dipertahankan sebagai jaring pengaman untuk tombol di pesan-pesan lama.
   - 🗑️ Hapus **tidak** menghapus langsung; ia cuma pintu masuk ke konfirmasi `/hapus` yang
     sudah ada. Konfirmasi tetap jadi milik hapus saja, sesuai poin 4 di bawah.
   - Tombol ✏️/🗑️ disembunyikan kalau tidak ada satu baris yang bisa ditunjuk (hasil

@@ -138,16 +138,12 @@ seluruh project. Urutan berkas tidak berpengaruh.
 | `/setjoingroups` | **Disable** — Momon bot personal, tidak dirancang dipakai di grup | `Disable` |
 | `/setprivacy` | Mode privasi di grup; tidak berpengaruh untuk chat pribadi | boleh dilewati |
 
-**Satu langkah yang WAJIB, bukan opsional:**
+| `/setinline` | **Tidak perlu** — Momon tidak memakai inline mode | lewati saja |
 
-| Perintah BotFather | Fungsi | Contoh isi |
-|---|---|---|
-| `/setinline` | Menyalakan inline mode | `koreksi transaksi…` |
-
-Momon tidak menyediakan hasil inline apa pun — inline mode dipakai semata-mata supaya
-tombol **✏️ Edit** di balasan bisa *mengisi* kotak ketik dengan `/edit <id> `. Kalau
-langkah ini dilewati, tombol itu tidak berfungsi (tombol lain tetap normal).
-`momonCekKonfigurasi()` akan memberi tanda ⚠️ selama inline mode masih mati.
+> Versi Momon sebelumnya mewajibkan `/setinline`, karena tombol **✏️ Edit** mengisi kotak
+> ketik lewat inline mode — dan Telegram selalu menempelkan `@namabot ` di depannya.
+> Sekarang tombol itu memakai callback biasa, jadi tidak ada lagi mention yang menempel
+> dan inline mode boleh dimatikan.
 
 Untuk `/setcommands`, pilih bot kamu lalu kirim blok berikut **persis seperti ini**
 (format `nama - deskripsi`, nama harus huruf kecil tanpa `/`):
@@ -318,9 +314,21 @@ Balasan akhirnya untuk satu transaksi membawa tiga tombol:
 
 | Tombol | Fungsi |
 |---|---|
-| ✏️ Edit | **Mengisi kotak ketik** dengan `/edit <id> ` — tinggal lanjut mengetik koreksinya |
+| ✏️ Edit | Momon menanyakan mau diubah apanya — **balas pesan biasa**, tanpa `/edit` dan tanpa menyebut `@namabot` |
 | 🗑️ Hapus | Masuk ke konfirmasi hapus (tetap ✅/❌ dulu, tidak langsung terhapus) |
 | 📊 Lihat di Google Sheet | Buka tab transaksinya |
+
+Jadi menekan ✏️ Edit itu seperti ini:
+
+```
+✏️ Mau diubah apanya dari transaksi #42?     <- Momon, lengkap dengan tombol ❌ Batal
+nominalnya 30rb, kategorinya Transportasi    <- kamu, pesan biasa
+✅ Transaksi #42 diperbarui!                 <- Momon, menimpa pesan pertanyaannya tadi
+```
+
+Momon hanya menunggu satu koreksi: pesan berikutnya yang diawali `/` tetap diperlakukan
+sebagai perintah, dan pertanyaannya hangus sendiri setelah `MOMON_PREVIEW_TTL_DETIK`.
+`/edit <id> <koreksi>` tetap bisa diketik manual kalau lebih suka begitu.
 
 Catatan kecil: ✏️ Edit hanya muncul kalau pesannya menghasilkan **satu** transaksi —
 kalau satu pesan mencatat beberapa sekaligus, tidak ada satu id yang bisa ditunjuk, jadi

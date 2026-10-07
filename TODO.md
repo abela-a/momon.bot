@@ -2,6 +2,60 @@
 
 See [README.md](README.md) for setup, usage, and configuration details.
 
+## ✅ SUDAH DIKERJAKAN — notif progres + tombol aksi di balasan
+
+Disepakati & diimplementasikan 2026-10-08.
+
+> ⚠️ ~~Sekali jalan setelah deploy: nyalakan inline mode lewat `/setinline`.~~ **Dibatalkan
+> 2026-10-08** — tombol ✏️ Edit sekarang memakai callback biasa, inline mode tidak
+> dibutuhkan lagi. Lihat catatan di bawah bullet ✏️ Edit.
+>
+> Langkah update lengkapnya ada di [MIGRASI.md](MIGRASI.md).
+
+### Pemisahan berkas
+
+- Konfigurasi dipindah ke **`Config.gs`** (konstanta `MOMON_*` + `momonConfig`/`momonUser`),
+  sisanya tetap di `Momon.gs`. Tujuannya supaya yang perlu disetel tidak perlu dicari di
+  tengah ~3000 baris logika.
+- Sempat dipecah jadi 15 berkas per-bagian, lalu digabung lagi — terlalu terpencar untuk
+  kode yang semuanya berbagi satu ruang global dan tidak punya batas modul sungguhan.
+  Yang betul-betul untung dipisah cuma konfigurasinya.
+- Pemisahan ini **murni pemindahan**: tidak ada nama fungsi atau logika yang berubah, jadi
+  trigger terjadwal yang sudah terpasang tetap jalan tanpa disentuh.
+
+- **Notif progres bertahap**, bukan konfirmasi baru. Setiap aksi yang menyentuh sheet
+  menulis ulang **satu pesan yang sama**: ⏳ sebelum panggilan Gemini (di situ tunggunya
+  terasa) → 💾 sebelum baris ditulis → hasil akhir. Pola ini sudah dipakai jalur foto/suara
+  sejak awal; sekarang jalur teks ikut memakainya.
+- **Keputusan poin 3 di bawah TETAP BERLAKU**: teks ketik biasa **tidak** dapat
+  preview/konfirmasi, tetap langsung tercatat. Yang ditambahkan cuma penanda progres —
+  pertimbangannya sama seperti dulu, pencatatan harian adalah aksi yang paling sering
+  dilakukan dan tidak layak kena satu tap ekstra.
+- **Tiga tombol di balasan**: ✏️ Edit, 🗑️ Hapus, 📊 Lihat di Google Sheet.
+  - ✏️ Edit memakai `switch_inline_query_current_chat` karena itu **satu-satunya** mekanisme
+    Telegram yang betul-betul *mengisi* kotak ketik (`copy_text` cuma menyalin ke clipboard,
+    tombol callback tidak menyentuh kotak ketik sama sekali). Harganya: inline mode wajib
+    aktif, dan Telegram menempelkan `@username ` di depan teksnya — ditanggalkan lagi oleh
+    `momonLepasMentionBot`.
+
+    **Direvisi 2026-10-08:** harganya ternyata tidak sepadan — `@namabot ` di depan tiap
+    koreksi mengotori riwayat chat, dan `/setinline` jadi syarat pemasangan. Diganti
+    callback `edit:<id>`: Momon balik bertanya "mau diubah apanya?" lalu memakai pesan
+    biasa berikutnya sebagai koreksi (`momonMintaKoreksiBaris` →
+    `momonTerapkanKoreksiBaris` → `momonPerintahEdit`). Kotak ketik memang tidak terisi
+    otomatis lagi, tapi user juga tidak perlu mengetik `/edit <id>` sendiri. Inline mode
+    tidak dipakai sama sekali sekarang; `momonLepasMentionBot` dan bentuk tombol
+    `{teks, isi}` dipertahankan sebagai jaring pengaman untuk tombol di pesan-pesan lama.
+  - 🗑️ Hapus **tidak** menghapus langsung; ia cuma pintu masuk ke konfirmasi `/hapus` yang
+    sudah ada. Konfirmasi tetap jadi milik hapus saja, sesuai poin 4 di bawah.
+  - Tombol ✏️/🗑️ disembunyikan kalau tidak ada satu baris yang bisa ditunjuk (hasil
+    multi-transaksi), dan ✏️ juga disembunyikan untuk transfer (konsisten dengan `/edit`
+    yang memang menolak baris transfer).
+- Tombol aksi sengaja **tidak diberi masa berlaku** — beda dari draft preview yang hangus 15
+  menit. Draft itu berisi data yang belum tersimpan sehingga berbahaya kalau basi; tombol
+  ini cuma menunjuk id yang sudah ada di sheet, dan kalau barisnya telanjur hilang Momon
+  menjawab "transaksi tidak ketemu".
+
 ## ✅ SUDAH DIKERJAKAN — input gambar & suara, preview-konfirmasi, ID transaksi
 
 Disepakati lewat sesi grilling (2026-10-07), diimplementasikan di hari yang sama.

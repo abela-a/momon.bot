@@ -1580,6 +1580,46 @@ function momonSiapkanSheet() {
     });
 }
 
+/**
+ * Migrasi sekali jalan: baris transfer LAMA (dicatat sebelum Tipe "Transfer"
+ * ada) masih tertulis "Pengeluaran"/"Pemasukan" di kolom Tipe. Fungsi ini
+ * menuliskan ulang kolom Tipe jadi "Transfer" untuk semua baris yang
+ * Kategori-nya MOMON_KATEGORI_TRANSFER, di semua sheet transaksi user
+ * terdaftar. Aman dijalankan berkali-kali — baris yang sudah "Transfer"
+ * dilewati, kolom lain tidak disentuh.
+ */
+function momonPerbaikiTipeTransferLama() {
+    const laporan = [];
+
+    momonSemuaUser().forEach((user) => {
+        const sheet = momonSheetData(user);
+        const totalBaris = sheet.getLastRow() - 1;
+        if (totalBaris <= 0) {
+            laporan.push(`${user.nama}: belum ada data.`);
+            return;
+        }
+
+        const tipeRange = sheet.getRange(2, 2, totalBaris, 1);
+        const kategori = sheet.getRange(2, 3, totalBaris, 1).getValues();
+        const tipe = tipeRange.getValues();
+
+        let diubah = 0;
+        for (let i = 0; i < totalBaris; i++) {
+            if (String(kategori[i][0]) === MOMON_KATEGORI_TRANSFER && String(tipe[i][0]) !== "Transfer") {
+                tipe[i][0] = "Transfer";
+                diubah++;
+            }
+        }
+
+        if (diubah > 0) tipeRange.setValues(tipe);
+        laporan.push(`${user.nama} (${user.sheet}): ${diubah} baris transfer diperbaiki.`);
+    });
+
+    const hasil = laporan.join("\n");
+    Logger.log(hasil);
+    return hasil;
+}
+
 // ============================================================
 //  ENTRY POINT — dipanggil Telegram lewat webhook Web App.
 //

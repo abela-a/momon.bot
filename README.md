@@ -227,6 +227,8 @@ Selesai. Kirim `/help` ke bot untuk mulai. 🎉
 | `/bulan` | Rekap bulan ini |
 | `/laporan <pertanyaan>` | Laporan cerdas; tanpa argumen = bulan ini |
 | `/transfer <nominal> dari <asal> ke <tujuan>` | Transfer saldo antar kantong; tanpa argumen = contoh cara pakai |
+| `/edit <id> <koreksi>` | Perbaiki transaksi yang sudah tercatat, koreksinya bahasa bebas |
+| `/hapus <id>` | Hapus transaksi (Momon minta konfirmasi dulu) |
 | `/sheet` | Tombol ke Google Sheet |
 | `/kategori` | Daftar kategori yang berlaku |
 | `/kantong` | Daftar kantong milikmu |
@@ -234,6 +236,8 @@ Selesai. Kirim `/help` ke bot untuk mulai. 🎉
 
 **Teks bebas** tidak perlu perintah. Momon sendiri yang menebak maksudnya:
 mencatat transaksi, transfer antar kantong, menanyakan laporan, atau sekadar mengobrol.
+
+**Foto struk** dan **voice note** juga bisa langsung dikirim — lihat di bawah.
 
 ### Contoh mencatat
 
@@ -254,6 +258,36 @@ pindah 100k dari Cash ke GoPay
 /transfer 200k dari Bank Jago ke BSI buat bayar kosan
 ```
 
+### Foto struk 🧾
+
+Kirim foto struknya, Momon yang membaca nominal, kategori, dan tanggalnya.
+Caption dipakai sebagai konteks tambahan kalau ada yang tidak terbaca di struk —
+misal `pakai BCA` untuk menentukan kantongnya.
+
+Kalau item-item di struk jatuh ke kategori yang berbeda, Momon memecahnya jadi
+beberapa transaksi sekaligus.
+
+### Voice note 🎙️
+
+Tinggal ngomong, tidak usah mengetik. Voice note diproses lewat jalur yang sama
+dengan teks bebas, jadi bisa dipakai untuk mencatat **maupun** bertanya laporan.
+
+### Preview & konfirmasi
+
+Hasil dari foto dan voice note **tidak langsung tersimpan**. Momon menampilkan
+hasil bacaannya dulu lengkap dengan tombol:
+
+| Tombol | Fungsi |
+|---|---|
+| ✅ Simpan | Tulis ke sheet |
+| ✏️ Edit | Kirim koreksi bahasa bebas, draft diperbaiki lalu ditampilkan ulang |
+| ❌ Batal | Buang draft, tidak ada yang tersimpan |
+
+Hanya ada satu draft menunggu per chat — mengirim foto/suara baru otomatis
+membatalkan draft sebelumnya. Draft yang didiamkan lebih dari 15 menit hangus
+sendiri. Teks bebas yang diketik biasa **tidak** lewat preview; tetap langsung
+tercatat seperti sebelumnya.
+
 ### Contoh bertanya
 
 ```
@@ -270,14 +304,19 @@ pengeluaran GoPay minggu ini dikelompokkan per hari
 
 ## 🗂️ Struktur data
 
-Sheet transaksi tiap akun memakai 7 kolom:
+Sheet transaksi tiap akun memakai 8 kolom:
 
-| A | B | C | D | E | F | G |
-|---|---|---|---|---|---|---|
-| Tanggal Transaksi | Tipe | Kategori | Kantong | Nominal | Deskripsi | Dicatat Pada |
+| A | B | C | D | E | F | G | H |
+|---|---|---|---|---|---|---|---|
+| Tanggal Transaksi | Tipe | Kategori | Kantong | Nominal | Deskripsi | Dicatat Pada | ID |
 
 - **Tanggal Transaksi** — waktu efektif transaksi (boleh backdate).
 - **Dicatat Pada** — waktu pesan masuk, tidak pernah backdate. Berguna untuk audit.
+- **ID** — nomor urut per akun, dipakai `/edit` dan `/hapus`. Momon menampilkannya
+  di balasan pencatatan dan di rincian laporan.
+
+> Punya sheet dari versi sebelum kolom ID ada? Jalankan `momonIsiIdTransaksiLama`
+> sekali dari editor Apps Script untuk mengisi ID baris-baris lama. Aman diulang.
 
 Sheet laporan ditulis ulang setiap kali laporan dibuat, berisi: ringkasan,
 tabel per-kelompok dengan persentase, lalu rincian transaksi **lengkap**
@@ -295,9 +334,12 @@ Semua di bagian atas `Momon.gs`:
 | Konstanta | Fungsi |
 |---|---|
 | `MOMON_TIMEZONE` | Zona waktu. **Harus sama** dengan `timeZone` di `appsscript.json` |
-| `MOMON_MODEL` | Model Gemini yang dipakai |
+| `MOMON_MODEL` | Model Gemini untuk teks |
+| `MOMON_MODEL_MEDIA` | Model Gemini untuk foto struk & voice note |
 | `MOMON_KOMENTAR_AI` | `false` untuk mematikan kalimat insight di akhir laporan (hemat 1 panggilan API) |
 | `MOMON_MAKS_RINCIAN_CHAT` | Batas baris rincian di Telegram |
+| `MOMON_PREVIEW_TTL_DETIK` | Umur draft foto/suara yang menunggu konfirmasi |
+| `MOMON_MAKS_UKURAN_FILE` | Batas ukuran foto/voice note yang diproses |
 | `MOMON_KATEGORI_PENGELUARAN` | Whitelist kategori pengeluaran |
 | `MOMON_KATEGORI_PEMASUKAN` | Whitelist kategori pemasukan |
 | `MOMON_KANTONG_DEFAULT` | Kantong untuk akun yang tidak punya daftar sendiri |

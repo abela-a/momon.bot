@@ -61,16 +61,23 @@ kategori, nilainya dipaksa ke `Lainnya` dan kamu diberi tahu lewat peringatan �
 
 ```
 .
-├── Momon.gs              # seluruh logika bot (satu file, self-contained)
+├── Config.gs             # konstanta MOMON_* + momonConfig/momonUser — yang perlu disetel
+├── Momon.gs              # seluruh logika bot
 ├── appsscript.json       # manifest Apps Script (timezone + konfigurasi Web App)
 ├── .clasp.json.example   # contoh config clasp — salin ke .clasp.json
 ├── .gitignore
 ├── LICENSE               # CC BY-NC-SA 4.0 (teks legal resmi)
 ├── NOTICE                # atribusi yang wajib ikut saat didistribusikan ulang
+├── MIGRASI.md            # cara update project Apps Script yang sudah jalan
 └── README.md
 ```
 
 Tidak ada dependency, tidak ada build step.
+
+`Config.gs` dipisah supaya semua yang perlu disetel ada di satu tempat yang pendek.
+Apps Script menaruh semua berkas `.gs` di **satu ruang global** — tidak ada import/export,
+semua fungsi bisa saling panggil, dan satu nama cuma boleh dideklarasikan sekali di
+seluruh project. Urutan berkas tidak berpengaruh.
 
 ---
 
@@ -85,9 +92,28 @@ Tidak ada dependency, tidak ada build step.
 > `SpreadsheetApp.getActiveSpreadsheet()`, jadi project Apps Script yang berdiri
 > sendiri tidak akan jalan.
 
-3. Hapus isi `Code.gs` bawaan, ganti namanya jadi `Momon`, lalu tempel seluruh isi `Momon.gs`.
+3. Salin berkas-berkas `.gs` dari repo ini ke project. Dua cara:
+
+   **Dengan clasp** (lebih cepat, sekali jalan):
+
+   ```bash
+   npm install -g @google/clasp
+   clasp login
+   cp .clasp.json.example .clasp.json   # isi scriptId dari ⚙️ Project Settings
+   clasp push
+   ```
+
+   **Manual lewat editor:** hapus isi `Code.gs` bawaan, ganti namanya jadi `Momon`, lalu
+   tempel seluruh isi `Momon.gs`. Lalu **+ → Script**, beri nama `Config` (tanpa `.gs` —
+   Apps Script menambahkannya sendiri), hapus `function myFunction() {}` bawaannya, dan
+   tempel seluruh isi `Config.gs`.
+
 4. Klik ⚙️ **Project Settings** → centang *Show "appsscript.json" manifest file*,
    lalu samakan isinya dengan `appsscript.json` di repo ini.
+
+> Sudah punya Momon versi lama yang konstantanya masih di dalam `Momon.gs`? Jangan
+> tambahkan `Config.gs` di sampingnya begitu saja — konstanta yang sama akan terdeklarasi
+> dua kali dan semua eksekusi gagal. Ikuti [MIGRASI.md](MIGRASI.md).
 
 ### 2. Buat & siapkan bot Telegram
 
@@ -105,6 +131,17 @@ Tidak ada dependency, tidak ada build step.
 | `/setcommands` | Daftar command yang muncul di menu "/" Telegram | lihat blok di bawah |
 | `/setjoingroups` | **Disable** — Momon bot personal, tidak dirancang dipakai di grup | `Disable` |
 | `/setprivacy` | Mode privasi di grup; tidak berpengaruh untuk chat pribadi | boleh dilewati |
+
+**Satu langkah yang WAJIB, bukan opsional:**
+
+| Perintah BotFather | Fungsi | Contoh isi |
+|---|---|---|
+| `/setinline` | Menyalakan inline mode | `koreksi transaksi…` |
+
+Momon tidak menyediakan hasil inline apa pun — inline mode dipakai semata-mata supaya
+tombol **✏️ Edit** di balasan bisa *mengisi* kotak ketik dengan `/edit <id> `. Kalau
+langkah ini dilewati, tombol itu tidak berfungsi (tombol lain tetap normal).
+`momonCekKonfigurasi()` akan memberi tanda ⚠️ selama inline mode masih mati.
 
 Untuk `/setcommands`, pilih bot kamu lalu kirim blok berikut **persis seperti ini**
 (format `nama - deskripsi`, nama harus huruf kecil tanpa `/`):
@@ -135,7 +172,7 @@ Buka <https://aistudio.google.com/apikey> → **Create API key** → salin.
 ### 4. Isi Script Properties
 
 **Project Settings → Script Properties → Add script property.**
-Ini satu-satunya tempat menyimpan rahasia — jangan pernah menulisnya di `Momon.gs`.
+Ini satu-satunya tempat menyimpan rahasia — jangan pernah menulisnya di dalam kode.
 
 | Property | Isi |
 |---|---|
@@ -259,6 +296,31 @@ pindah 100k dari Cash ke GoPay
 /transfer 200k dari Bank Jago ke BSI buat bayar kosan
 ```
 
+### Progres & tombol aksi
+
+Setiap aksi yang menyentuh sheet menampilkan progresnya di **satu pesan yang sama**,
+bukan menumpuk pesan baru:
+
+```
+⏳ Momon lagi baca pesanmu…      ->  💾 Momon lagi nyatet…      ->  ✅ Sip, dicatat ya!
+```
+
+Balasan akhirnya untuk satu transaksi membawa tiga tombol:
+
+| Tombol | Fungsi |
+|---|---|
+| ✏️ Edit | **Mengisi kotak ketik** dengan `/edit <id> ` — tinggal lanjut mengetik koreksinya |
+| 🗑️ Hapus | Masuk ke konfirmasi hapus (tetap ✅/❌ dulu, tidak langsung terhapus) |
+| 📊 Lihat di Google Sheet | Buka tab transaksinya |
+
+Catatan kecil: ✏️ Edit hanya muncul kalau pesannya menghasilkan **satu** transaksi —
+kalau satu pesan mencatat beberapa sekaligus, tidak ada satu id yang bisa ditunjuk, jadi
+hanya tombol 📊 yang tampil. Baris **transfer** tidak punya ✏️ Edit karena menyentuh dua
+kantong sekaligus; untuk memperbaikinya, hapus lalu catat ulang.
+
+Tombol-tombol ini tidak kedaluwarsa — menekan 🗑️ di balasan minggu lalu tetap jalan
+(kalau barisnya sudah telanjur dihapus, Momon bilang transaksinya tidak ketemu).
+
 ### Foto struk 🧾
 
 Kirim foto struknya, Momon yang membaca nominal, kategori, dan tanggalnya.
@@ -361,7 +423,7 @@ tercatat.
 
 ## ⚙️ Kustomisasi
 
-Semua di bagian atas `Momon.gs`:
+Semua di `Config.gs`:
 
 | Konstanta | Fungsi |
 |---|---|
@@ -393,11 +455,19 @@ clasp pull                            # Apps Script -> lokal
 
 `.clasp.json` sudah masuk `.gitignore` karena berisi `scriptId` milik project pribadi.
 
+`clasp push` mengirim **seluruh isi folder** sebagai isi project — berkas yang kamu hapus
+di lokal ikut hilang di Apps Script. Ingat, `push` saja belum mengganti bot yang live:
+Web App tetap menyajikan versi yang di-deploy sampai kamu menekan
+**Deploy → Manage deployments → ✏️ → New version → Deploy**.
+
+Mau memperbarui project yang sudah jalan (termasuk pindah dari `Momon.gs` lama yang satu
+berkas)? Ikuti [MIGRASI.md](MIGRASI.md).
+
 ---
 
 ## 🔐 Keamanan
 
-- **Jangan pernah** menulis token atau API key di `Momon.gs`. Semua rahasia hidup di
+- **Jangan pernah** menulis token atau API key di dalam kode. Semua rahasia hidup di
   Script Properties, dan konstanta `*_FALLBACK` di repo ini sengaja dibiarkan kosong.
 - `MOMON_USERS` berisi chat id pribadi — simpan di Script Properties, bukan di kode.
 - Web App memang harus dibuka untuk "Anyone", tapi `momonTerimaUpdate()` menolak

@@ -28,164 +28,8 @@
  * ============================================================
  */
 
-// ================= KONFIGURASI =================
-//
-// ⚠️ JANGAN menulis token atau API key di file ini — file ini masuk Git.
-//
-// Isi nilainya lewat: Apps Script > ⚙️ Project Settings > Script Properties
-//   MOMON_BOT_TOKEN       token dari @BotFather
-//   MOMON_GEMINI_API_KEY  key dari https://aistudio.google.com/apikey
-//   MOMON_USERS           JSON daftar user (lihat MOMON_USERS_FALLBACK di bawah)
-//   MOMON_WEBHOOK_URL     URL deployment Web App
-//
-// Konstanta FALLBACK di bawah sengaja dibiarkan kosong. Script Properties
-// selalu menang kalau terisi. Jalankan momonCekKonfigurasi() untuk memeriksa.
-const MOMON_BOT_TOKEN_FALLBACK = "";
-const MOMON_GEMINI_API_KEY_FALLBACK = "";
-
-// Mode debug. Nyalakan lewat Script Property MOMON_DEBUG = "true" (tanpa perlu
-// redeploy), matikan dengan menghapus propertinya atau mengisi "false".
-// Saat aktif, Momon mengirim satu pesan diagnosa setelah tiap balasan.
-const MOMON_DEBUG_FALLBACK = false;
-
-// Error terakhir disimpan di sini supaya bisa dilihat lewat /debug walau
-// kejadiannya sudah lewat.
-const MOMON_PROP_ERROR_TERAKHIR = "MOMON_ERROR_TERAKHIR";
-
-// Daftar akun Telegram yang boleh memakai Momon — tiap akun punya sheet sendiri.
-// Ini hanya CONTOH BENTUK DATA; isi aslinya taruh di Script Property MOMON_USERS
-// supaya chat id pribadi tidak ikut ter-commit.
-//
-// Cara dapat chat id: kirim /id ke bot, Momon akan membalas id-nya.
-const MOMON_USERS_FALLBACK = {
-    CHAT_ID_AKUN_1: {
-        nama: "Akun Pertama",
-        sheet: "akun1",
-        sheetLaporan: "akun1.report",
-        kantong: ["Cash", "Bank Jago", "BSI", "GoPay", "Investasi/Tabungan"],
-    },
-    CHAT_ID_AKUN_2: {
-        nama: "Akun Kedua",
-        sheet: "akun2",
-        sheetLaporan: "akun2.report",
-        kantong: ["Cash", "Bank Jago", "BSI", "GoPay", "Investasi/Tabungan", "BCA"],
-    },
-};
-
-// Harus sama dengan timeZone di appsscript.json.
-const MOMON_TIMEZONE = "Asia/Makassar";
-const MOMON_MODEL = "gemini-flash-lite-latest";
-// Gambar & suara butuh model yang lebih kuat dari flash-lite, tapi tetap kelas flash.
-const MOMON_MODEL_MEDIA = "gemini-flash-latest";
-
-// Gemini sesekali membalas 429/500/503 saat modelnya lagi penuh — itu sementara,
-// jadi dicoba ulang sebentar. Jangan dibesarkan: Telegram menganggap webhook
-// gagal kalau balasannya kelamaan, lalu mengirim ulang update yang sama.
-const MOMON_GEMINI_MAKS_PERCOBAAN = 3;
-
-// Kalau true, Momon menambahkan satu kalimat insight ceria dari AI di akhir
-// laporan. Angkanya TETAP dihitung oleh script (bukan AI), jadi selalu akurat.
-const MOMON_KOMENTAR_AI = true;
-
-// Maksimum baris rincian yang ditampilkan di Telegram.
-// Rincian lengkapnya selalu ditulis utuh ke Google Sheet.
-const MOMON_MAKS_RINCIAN_CHAT = 20;
-
-// Berapa lama draft hasil gambar/suara menunggu konfirmasi sebelum hangus (detik).
-const MOMON_PREVIEW_TTL_DETIK = 15 * 60;
-
-// Batas ukuran berkas gambar/suara yang mau diproses (byte).
-const MOMON_MAKS_UKURAN_FILE = 10 * 1024 * 1024;
-
-// Daftar tertutup — AI wajib memilih persis dari daftar ini.
-const MOMON_KATEGORI_PENGELUARAN = [
-    "Makanan & Minuman",
-    "Transportasi",
-    "Belanja",
-    "Tagihan & Utilitas",
-    "Kesehatan",
-    "Pendidikan",
-    "Hiburan",
-    "Perawatan Diri",
-    "Rumah Tangga",
-    "Sosial & Hadiah",
-    "Investasi",
-    "Cicilan/Utang",
-    "Lainnya",
-];
-const MOMON_KATEGORI_PEMASUKAN = ["Gaji", "Bonus/THR", "Freelance/Usaha", "Investasi", "Hadiah", "Lainnya"];
-const MOMON_KATEGORI_TRANSFER = "Transfer Antar Kantong";
-const MOMON_KANTONG_DEFAULT = ["Cash", "Bank Jago", "Investasi", "GoPay", "BSI"];
-
-// Kolom "ID" sengaja ditaruh paling kanan supaya sheet lama tidak perlu digeser.
-// Isi kolomnya untuk baris lama dibuat sekali lewat momonIsiIdTransaksiLama().
-const MOMON_HEADER = [
-    "Tanggal Transaksi",
-    "Tipe",
-    "Kategori",
-    "Kantong",
-    "Nominal",
-    "Deskripsi",
-    "Dicatat Pada",
-    "ID",
-];
-const MOMON_KOL_DICATAT = 7;
-const MOMON_KOL_ID = 8;
-// ===============================================
-
-// ============================================================
-//  KONFIG & USER
-// ============================================================
-
-function momonConfig() {
-    const props = PropertiesService.getScriptProperties();
-    return {
-        BOT_TOKEN: props.getProperty("MOMON_BOT_TOKEN") || MOMON_BOT_TOKEN_FALLBACK,
-        GEMINI_API_KEY: props.getProperty("MOMON_GEMINI_API_KEY") || MOMON_GEMINI_API_KEY_FALLBACK,
-        WEBHOOK_URL: props.getProperty("MOMON_WEBHOOK_URL") || "",
-        DEBUG: String(props.getProperty("MOMON_DEBUG") || MOMON_DEBUG_FALLBACK).toLowerCase() === "true",
-    };
-}
-
-/** Peta chat id -> profil user. Script Property MOMON_USERS menang kalau ada. */
-function momonDaftarUser() {
-    const json = PropertiesService.getScriptProperties().getProperty("MOMON_USERS");
-    if (json) {
-        try {
-            const parsed = JSON.parse(json);
-            if (parsed && typeof parsed === "object") return parsed;
-        } catch (err) {
-            Logger.log("MOMON_USERS bukan JSON valid, pakai fallback: " + err);
-        }
-    }
-    return MOMON_USERS_FALLBACK;
-}
-
-/** Ambil profil user (sudah dilengkapi default) atau null kalau tidak terdaftar. */
-function momonUser(chatId) {
-    const profil = momonDaftarUser()[String(chatId)];
-    if (!profil) return null;
-
-    const nama = String(profil.nama || "Teman").trim() || "Teman";
-    return {
-        chatId: String(chatId),
-        nama: nama,
-        sheet: String(profil.sheet || "Momon - " + nama),
-        sheetLaporan: String(profil.sheetLaporan || "Laporan - " + nama),
-        kantong:
-            Array.isArray(profil.kantong) && profil.kantong.length
-                ? profil.kantong.map(String)
-                : MOMON_KANTONG_DEFAULT.slice(),
-    };
-}
-
-/** Semua user terdaftar (dipakai sapaan pagi/malam lewat trigger).
- *  Entri contoh seperti "CHAT_ID_AKUN_1" otomatis diabaikan karena bukan angka. */
-function momonSemuaUser() {
-    return Object.keys(momonDaftarUser())
-        .map(momonUser)
-        .filter((u) => u && /^-?\d+$/.test(u.chatId));
-}
+// Konstanta & kredensial ada di Config.gs — kedua berkas berbagi satu ruang
+// global, jadi semuanya bisa dipakai langsung dari sini tanpa import.
 
 // ============================================================
 //  DEBUG
@@ -331,6 +175,13 @@ function momonTerimaUpdate(e) {
             return momonTanganiCallback(update.callback_query);
         }
 
+        // Inline mode cuma dinyalakan supaya tombol "✏️ Edit" bisa mengisi chatbox;
+        // ketikan user sesudahnya ikut terkirim ke sini sebagai inline_query.
+        if (update.inline_query) {
+            momonDebugCatat("Update: inline_query", update.inline_query.query);
+            return momonJawabInlineQuery(update.inline_query.id);
+        }
+
         const pesan = update.message || update.edited_message;
         if (!pesan || !pesan.chat) return;
 
@@ -339,7 +190,11 @@ function momonTerimaUpdate(e) {
         // Caption hanya dianggap teks untuk FOTO. Lampiran jenis lain belum
         // didukung, dan captionnya tidak boleh diam-diam tercatat sebagai
         // transaksi lewat jalur teks biasa.
-        const teks = String(pesan.text || (pesan.photo ? pesan.caption : "") || "").trim();
+        // Pesan yang berangkat dari tombol "✏️ Edit" diawali "@NamaBot " — ditanggalkan
+        // di sini supaya sisanya tetap diperlakukan sebagai perintah biasa.
+        const teks = momonLepasMentionBot(
+            String(pesan.text || (pesan.photo ? pesan.caption : "") || "").trim(),
+        );
         const adaMedia = !!(pesan.photo || pesan.voice);
         const lampiranLain = !adaMedia && !!(pesan.document || pesan.audio || pesan.video);
         if (!teks && !adaMedia && !lampiranLain) return;
@@ -449,9 +304,10 @@ function momonRoute(user, teks) {
                 ].join("\n"),
             );
         }
+        const penanda = momonKirim(user.chatId, "⏳ <b>Momon lagi nyiapin transfernya…</b>");
         const hasil = momonOtak(user, kueri, "transfer");
-        if (hasil && hasil.gagal) return momonKirim(user.chatId, hasil.reply);
-        return momonTransfer(user, hasil && hasil.transfer ? hasil.transfer : {});
+        if (hasil && hasil.gagal) return momonBalasKePenanda(user.chatId, penanda, hasil.reply);
+        return momonTransfer(user, hasil && hasil.transfer ? hasil.transfer : {}, penanda);
     }
 
     // /edit <id> <koreksi bebas>
@@ -489,31 +345,41 @@ function momonRoute(user, teks) {
 // ============================================================
 
 function momonProsesTeksBebas(user, teks) {
+    // Penanda dipasang SEBELUM panggilan Gemini, karena di situlah tunggunya terasa.
+    // Pesan yang sama lalu ditulis ulang jadi hasil akhirnya, apa pun intent-nya —
+    // jadi satu pesan yang berubah, bukan tumpukan pesan baru.
+    const penanda = momonKirim(user.chatId, "⏳ <b>Momon lagi baca pesanmu…</b>");
     const hasil = momonOtak(user, teks);
 
     if (!hasil) {
-        return momonKirim(user.chatId, "😔 Maaf, otak Momon lagi ngadat. Coba lagi sebentar lagi ya!");
+        return momonBalasKePenanda(
+            user.chatId,
+            penanda,
+            "😔 Maaf, otak Momon lagi ngadat. Coba lagi sebentar lagi ya!",
+        );
     }
 
     const intent = String(hasil.intent || "obrolan").toLowerCase();
 
-    if (intent === "transaksi") return momonCatatTransaksi(user, hasil.transaksi);
-    if (intent === "transfer") return momonTransfer(user, hasil.transfer);
-    if (intent === "laporan") return momonSajikanLaporan(user, hasil.laporan, teks);
+    if (intent === "transaksi") return momonCatatTransaksi(user, hasil.transaksi, penanda);
+    if (intent === "transfer") return momonTransfer(user, hasil.transfer, penanda);
+    if (intent === "laporan") return momonSajikanLaporan(user, hasil.laporan, teks, penanda);
 
-    momonKirim(
+    momonBalasKePenanda(
         user.chatId,
+        penanda,
         hasil.reply || `Hehe, Momon kurang paham maksudnya, ${momonEsc(user.nama)}. Coba tulis ulang ya! 🌼`,
     );
 }
 
 /** Jalur cepat: langsung minta AI menyusun spesifikasi laporan dari kueri. */
 function momonLaporanCepat(user, kueri) {
+    const penanda = momonKirim(user.chatId, "⏳ <b>Momon lagi ngitung…</b>");
     const hasil = momonOtak(user, kueri, "laporan");
     if (hasil && hasil.gagal) {
-        return momonKirim(user.chatId, hasil.reply);
+        return momonBalasKePenanda(user.chatId, penanda, hasil.reply);
     }
-    momonSajikanLaporan(user, hasil && hasil.laporan ? hasil.laporan : {}, kueri);
+    momonSajikanLaporan(user, hasil && hasil.laporan ? hasil.laporan : {}, kueri, penanda);
 }
 
 /**
@@ -701,12 +567,15 @@ function momonPanggilGemini(config, prompt, suhu, opsi) {
 
 /** `daftarRaw` biasanya array (AI bisa mengirim beberapa transaksi dari satu pesan),
  *  tapi tetap menerima object tunggal untuk jaga-jaga kalau AI lupa membungkusnya. */
-function momonCatatTransaksi(user, daftarRaw) {
+function momonCatatTransaksi(user, daftarRaw, penandaId) {
+    if (penandaId) momonEditPesan(user.chatId, penandaId, "💾 <b>Momon lagi nyatet…</b>");
+
     const hasil = momonSimpanTransaksi(user, daftarRaw);
 
     if (hasil.kosong) {
-        return momonKirim(
+        return momonBalasKePenanda(
             user.chatId,
+            penandaId,
             [
                 "🤏 <b>Transaksinya belum kebaca nih!</b>",
                 "Coba tulis angkanya, contoh:",
@@ -715,12 +584,15 @@ function momonCatatTransaksi(user, daftarRaw) {
         );
     }
 
-    momonKirim(
+    // Tombol ✏️/🗑️ hanya masuk akal kalau hasilnya SATU baris — kalau satu pesan
+    // menghasilkan beberapa transaksi, tidak ada id tunggal yang bisa ditunjuk.
+    const tunggal = hasil.berhasil.length === 1 ? hasil.berhasil[0].id : 0;
+
+    momonBalasKePenanda(
         user.chatId,
+        penandaId,
         momonRenderHasilTransaksi(user, hasil.berhasil, hasil.gagal, hasil.now),
-        hasil.berhasil.length
-            ? { tombol: { teks: "📊 Lihat di Google Sheet", url: momonUrlSheet(hasil.sheet) } }
-            : undefined,
+        hasil.berhasil.length ? momonTombolHasil(hasil.sheet, tunggal, true) : undefined,
     );
 }
 
@@ -936,13 +808,15 @@ function momonResolveTanggalWaktu(raw, peringatan) {
  * ditandai lewat awalan deskripsi "Transfer ke "/"Transfer dari ", lihat
  * momonTransferMasuk().
  */
-function momonTransfer(user, raw) {
-    const hasil = momonSimpanTransfer(user, raw);
-    if (!hasil.ok) return momonKirim(user.chatId, hasil.pesan);
+function momonTransfer(user, raw, penandaId) {
+    if (penandaId) momonEditPesan(user.chatId, penandaId, "💾 <b>Momon lagi mindahin…</b>");
 
-    momonKirim(user.chatId, hasil.pesan, {
-        tombol: { teks: "📊 Lihat di Google Sheet", url: momonUrlSheet(hasil.sheet) },
-    });
+    const hasil = momonSimpanTransfer(user, raw);
+    if (!hasil.ok) return momonBalasKePenanda(user.chatId, penandaId, hasil.pesan);
+
+    // Transfer tidak bisa diedit sepotong (lihat momonPerintahEdit), jadi cuma 🗑️ + 📊.
+    // Menghapus salah satu kakinya otomatis ikut menghapus pasangannya.
+    momonBalasKePenanda(user.chatId, penandaId, hasil.pesan, momonTombolHasil(hasil.sheet, hasil.ids[0], false));
 }
 
 /**
@@ -1374,6 +1248,16 @@ function momonTanganiCallback(cq) {
     const pending = momonAmbilPending(chatId);
     const aksi = String(cq.data || "");
 
+    // Tombol "🗑️ Hapus" menempel di pesan HASIL, bukan di draft — jadi sengaja
+    // diproses sebelum pemeriksaan draft di bawah, supaya tetap bisa ditekan
+    // berapa lama pun setelah transaksinya dicatat. Ia tidak menghapus apa pun
+    // sendiri: cuma pintu masuk ke konfirmasi /hapus yang sudah ada.
+    const mintaHapus = aksi.match(/^hapus:(\d+)$/);
+    if (mintaHapus) {
+        momonJawabCallback(cq.id, "Konfirmasi dulu ya");
+        return momonPerintahHapus(user, mintaHapus[1]);
+    }
+
     // Draft hangus setelah MOMON_PREVIEW_TTL_DETIK, dan draft baru menimpa yang
     // lama — tombol di pesan lama tidak boleh menyimpan apa pun.
     if (!pending || pending.messageId !== messageId) {
@@ -1417,13 +1301,15 @@ function momonTanganiCallback(cq) {
 
 /** Simpan isi draft — lewat jalur validasi yang sama persis dengan teks bebas. */
 function momonSimpanDariPreview(user, pending, messageId) {
+    momonEditPesan(user.chatId, messageId, "💾 <b>Momon lagi nyimpen…</b>");
+
     if (pending.jenis === "transfer") {
         const hasil = momonSimpanTransfer(user, pending.transfer);
         return momonEditPesan(
             user.chatId,
             messageId,
             hasil.pesan,
-            hasil.ok ? { tombol: { teks: "📊 Lihat di Google Sheet", url: momonUrlSheet(hasil.sheet) } } : null,
+            hasil.ok ? momonTombolHasil(hasil.sheet, hasil.ids[0], false) : null,
         );
     }
 
@@ -1432,18 +1318,27 @@ function momonSimpanDariPreview(user, pending, messageId) {
         return momonEditPesan(user.chatId, messageId, "🤷 Draftnya kosong, jadi tidak ada yang Momon simpan.");
     }
 
+    const tunggal = hasil.berhasil.length === 1 ? hasil.berhasil[0].id : 0;
+
     momonEditPesan(
         user.chatId,
         messageId,
         momonRenderHasilTransaksi(user, hasil.berhasil, hasil.gagal, hasil.now),
-        hasil.berhasil.length ? { tombol: { teks: "📊 Lihat di Google Sheet", url: momonUrlSheet(hasil.sheet) } } : null,
+        hasil.berhasil.length ? momonTombolHasil(hasil.sheet, tunggal, true) : null,
     );
 }
 
 /** Pesan teks setelah user menekan "✏️ Edit" = koreksi untuk draft yang masih menggantung. */
 function momonTerapkanKoreksi(user, pending, teks) {
+    if (pending.messageId) {
+        momonEditPesan(user.chatId, pending.messageId, "⏳ <b>Momon lagi nerapin koreksinya…</b>");
+    }
+
     const hasil = momonOtakKoreksi(user, pending, teks);
     if (!hasil || hasil.gagal) {
+        // Penanda di atas sudah menimpa preview berikut tombolnya — kembalikan dulu
+        // supaya draftnya tetap bisa dikonfirmasi, baru laporkan gagalnya.
+        momonTampilkanPreview(user, pending);
         return momonKirim(user.chatId, (hasil && hasil.reply) || "😔 Momon gagal memproses koreksinya.");
     }
 
@@ -1542,17 +1437,24 @@ function momonPerintahEdit(user, argumen) {
         waktu: Utilities.formatDate(target.nilai[0], MOMON_TIMEZONE, "HH:mm"),
     };
 
+    const penanda = momonKirim(user.chatId, "⏳ <b>Momon lagi baca koreksinya…</b>");
+
     const hasil = momonOtakEditBaris(user, lama, arg.sisa);
     if (!hasil || hasil.gagal) {
-        return momonKirim(user.chatId, (hasil && hasil.reply) || "😔 Momon gagal memproses koreksinya.");
+        return momonBalasKePenanda(
+            user.chatId,
+            penanda,
+            (hasil && hasil.reply) || "😔 Momon gagal memproses koreksinya.",
+        );
     }
 
     // Jalur validasi yang sama persis dengan pencatatan biasa — hasil AI tidak
     // pernah masuk sheet tanpa lewat sini.
     const baru = momonValidasiTransaksi(user, hasil.transaksi);
     if (!baru.ok) {
-        return momonKirim(
+        return momonBalasKePenanda(
             user.chatId,
+            penanda,
             [
                 `🙈 <b>Editnya Momon batalkan</b> — ${baru.alasan}.`,
                 "",
@@ -1560,6 +1462,8 @@ function momonPerintahEdit(user, argumen) {
             ].join("\n"),
         );
     }
+
+    if (penanda) momonEditPesan(user.chatId, penanda, `✏️ <b>Momon lagi ngedit #${arg.id}…</b>`);
 
     const nilaiBaru = target.nilai.slice();
     nilaiBaru[0] = baru.tanggal;
@@ -1587,9 +1491,7 @@ function momonPerintahEdit(user, argumen) {
         pesan.push("⚠️ " + baru.peringatan.join(" "));
     }
 
-    momonKirim(user.chatId, pesan.join("\n"), {
-        tombol: { teks: "📊 Lihat di Google Sheet", url: momonUrlSheet(sheet) },
-    });
+    momonBalasKePenanda(user.chatId, penanda, pesan.join("\n"), momonTombolHasil(sheet, arg.id, true));
 }
 
 function momonOtakEditBaris(user, lama, koreksi) {
@@ -1671,6 +1573,8 @@ function momonJalankanHapus(user, pending, messageId) {
         );
     }
 
+    momonEditPesan(user.chatId, messageId, `🗑️ <b>Momon lagi menghapus #${pending.id}…</b>`);
+
     // Transfer selalu sepasang baris; menghapus sebelah saja bikin saldo melenceng.
     const transfer = String(target.nilai[1]) === "Transfer";
     const baris = [target.baris];
@@ -1694,7 +1598,8 @@ function momonJalankanHapus(user, pending, messageId) {
         user.chatId,
         messageId,
         [`🗑️ <b>Transaksi #${pending.id} dihapus.</b>`].concat(catatan, ["", pending.ringkasan]).join("\n"),
-        { tombol: { teks: "📊 Lihat di Google Sheet", url: momonUrlSheet(sheet) } },
+        // Barisnya sudah tidak ada — tidak ada lagi yang bisa diedit/dihapus.
+        momonTombolHasil(sheet, 0, false),
     );
 }
 
@@ -1724,13 +1629,14 @@ function momonCariPasanganTransfer(sheet, baris, nilai) {
 //  LAPORAN CERDAS
 // ============================================================
 
-function momonSajikanLaporan(user, specRaw, kueriAsli) {
+function momonSajikanLaporan(user, specRaw, kueriAsli, penandaId) {
     const spec = momonNormalisasiSpec(specRaw, kueriAsli);
     const semua = momonBacaTransaksi(user);
 
     if (!semua.length) {
-        return momonKirim(
+        return momonBalasKePenanda(
             user.chatId,
+            penandaId,
             [
                 `📭 <b>Belum ada transaksi tercatat, ${momonEsc(user.nama)}.</b>`,
                 "",
@@ -1749,7 +1655,9 @@ function momonSajikanLaporan(user, specRaw, kueriAsli) {
     const urlSheet = momonTulisLaporanKeSheet(user, spec, ringkas, grup, rincian);
     const pesan = momonRenderLaporan(user, spec, rows, ringkas, grup, rincian);
 
-    momonKirim(user.chatId, pesan, {
+    // Laporan bisa melebihi satu potongan — momonBalasKePenanda yang menjaga
+    // supaya sisanya menyusul sebagai pesan baru, bukan terpenggal diam-diam.
+    momonBalasKePenanda(user.chatId, penandaId, pesan, {
         tombol: { teks: "📊 Buka laporan di Google Sheet", url: urlSheet },
     });
 }
@@ -2370,7 +2278,7 @@ function momonIngatkanMalam() {
 }
 
 // ============================================================
-//  SHEET & UTILITAS
+//  AKSES SHEET — baca/tulis baris & alokasi ID
 // ============================================================
 
 /** Sheet data milik user — dibuat otomatis beserta headernya kalau belum ada. */
@@ -2494,6 +2402,10 @@ function momonCariBarisById(sheet, id) {
     return null;
 }
 
+// ============================================================
+//  FORMAT & UTILITAS — label, tanggal, angka, escaping
+// ============================================================
+
 function momonLabelFilter(spec) {
     const bagian = [];
     bagian.push(momonTanggalIndo(spec.dari) + " s/d " + momonTanggalIndo(spec.sampai));
@@ -2560,6 +2472,10 @@ const MOMON_SEMANGAT = ["🎉", "✨", "💪", "🌟", "🙌", "🥳", "🌈"];
 function momonSemangat() {
     return MOMON_SEMANGAT[Math.floor(Math.random() * MOMON_SEMANGAT.length)];
 }
+
+// ============================================================
+//  LAPISAN API TELEGRAM — kirim/edit pesan, tombol, inline mode
+// ============================================================
 
 /**
  * Kirim pesan Telegram. Otomatis dipotong kalau melebihi batas 4096 karakter;
@@ -2648,6 +2564,27 @@ function momonEditPesan(chatId, messageId, teks, opsi) {
     }
 }
 
+/**
+ * Tulis hasil akhir ke pesan penanda "lagi diproses" yang sudah terkirim.
+ *
+ * Beda dengan momonEditPesan polos: editMessageText cuma muat SATU potongan, jadi
+ * hasil yang kepanjangan (laporan, misalnya) akan terpenggal diam-diam kalau
+ * dipaksa masuk ke satu pesan. Di sini potongan pertama menimpa penanda dan
+ * sisanya menyusul sebagai pesan baru, persis seperti momonKirim memotong.
+ *
+ * `penandaId` 0 (penanda gagal terkirim) -> langsung kirim pesan baru, supaya
+ * gagalnya penanda tidak pernah ikut menggagalkan balasannya.
+ */
+function momonBalasKePenanda(chatId, penandaId, teks, opsi) {
+    if (!penandaId) return momonKirim(chatId, teks, opsi);
+
+    const potongan = momonPotongPesan(teks, 3800);
+    // Tombol hanya ditempel di potongan terakhir, sama seperti momonKirim.
+    momonEditPesan(chatId, penandaId, potongan[0], potongan.length === 1 ? opsi : null);
+    if (potongan.length > 1) momonKirim(chatId, potongan.slice(1).join("\n"), opsi);
+    return penandaId;
+}
+
 /** Matikan animasi loading di tombol yang baru ditekan. */
 function momonJawabCallback(callbackId, teks) {
     const config = momonConfig();
@@ -2663,17 +2600,117 @@ function momonJawabCallback(callbackId, teks) {
     }
 }
 
+/**
+ * Inline mode dipakai HANYA supaya tombol "✏️ Edit" bisa mengisi chatbox
+ * (switch_inline_query_current_chat). Momon tidak menyediakan hasil inline apa pun,
+ * jadi dropdown-nya dijawab kosong biar langsung tertutup, bukan berputar terus.
+ */
+function momonJawabInlineQuery(inlineId) {
+    const config = momonConfig();
+    try {
+        UrlFetchApp.fetch(`https://api.telegram.org/bot${config.BOT_TOKEN}/answerInlineQuery`, {
+            method: "post",
+            contentType: "application/json",
+            payload: JSON.stringify({
+                inline_query_id: inlineId,
+                results: [],
+                cache_time: 300,
+                is_personal: true,
+            }),
+            muteHttpExceptions: true,
+        });
+    } catch (err) {
+        Logger.log("Exception answerInlineQuery: " + err);
+    }
+}
+
+const MOMON_CACHE_USERNAME = "momon_username_bot";
+
+/** Username bot sendiri (tanpa "@"), dari getMe. Di-cache supaya tidak dipanggil
+ *  berulang; "" kalau gagal — pemanggilnya wajib tahan terhadap nilai kosong. */
+function momonUsernameBot() {
+    const cache = CacheService.getScriptCache();
+    const tersimpan = cache.get(MOMON_CACHE_USERNAME);
+    if (tersimpan) return tersimpan;
+
+    const config = momonConfig();
+    try {
+        const res = UrlFetchApp.fetch(`https://api.telegram.org/bot${config.BOT_TOKEN}/getMe`, {
+            muteHttpExceptions: true,
+        });
+        if (res.getResponseCode() !== 200) return "";
+        const body = JSON.parse(res.getContentText());
+        const nama = (body && body.result && body.result.username) || "";
+        if (nama) cache.put(MOMON_CACHE_USERNAME, nama, 6 * 60 * 60);
+        return nama;
+    } catch (err) {
+        Logger.log("Exception getMe: " + err);
+        return "";
+    }
+}
+
+/**
+ * Tombol "✏️ Edit" mengisi chatbox lewat switch_inline_query_current_chat, dan
+ * Telegram SELALU menempelkan "@username " di depan isinya. Prefix itu dibuang di
+ * sini supaya yang sampai ke momonRoute tetap "/edit 42 ..." seperti diketik manual.
+ *
+ * getMe hanya dipanggil kalau teksnya memang diawali "@", jadi update biasa tidak
+ * kena biaya tambahan. Kalau getMe gagal, prefix cuma dibuang bila berakhiran "bot"
+ * (username bot Telegram wajib begitu) — supaya kalimat biasa yang kebetulan diawali
+ * mention orang lain tidak ikut terpotong.
+ */
+function momonLepasMentionBot(teks) {
+    const m = String(teks).match(/^@([A-Za-z0-9_]{4,32})\s+([\s\S]*)$/);
+    if (!m) return teks;
+
+    const sendiri = momonUsernameBot();
+    if (sendiri) {
+        if (m[1].toLowerCase() !== sendiri.toLowerCase()) return teks;
+    } else if (!/bot$/i.test(m[1])) {
+        return teks;
+    }
+    return m[2].trim();
+}
+
+/**
+ * Satu tombol inline, dalam tiga bentuk:
+ *   {teks, url}  -> buka tautan
+ *   {teks, aksi} -> callback_data, ditangani momonTanganiCallback
+ *   {teks, isi}  -> switch_inline_query_current_chat: ISI chatbox user dengan teks itu.
+ * Untuk bentuk ketiga Telegram selalu menempelkan "@username " di depan isinya —
+ * prefix itu ditanggalkan lagi di momonLepasMentionBot() saat pesannya masuk.
+ */
+function momonTombolTelegram(t) {
+    if (t.url) return { text: t.teks, url: t.url };
+    if (typeof t.isi === "string") return { text: t.teks, switch_inline_query_current_chat: t.isi };
+    return { text: t.teks, callback_data: t.aksi };
+}
+
 function momonReplyMarkup(opsi) {
     if (!opsi) return null;
     if (opsi.tombolAksi) {
-        return {
-            inline_keyboard: opsi.tombolAksi.map((baris) =>
-                baris.map((t) => ({ text: t.teks, callback_data: t.aksi })),
-            ),
-        };
+        return { inline_keyboard: opsi.tombolAksi.map((baris) => baris.map(momonTombolTelegram)) };
     }
-    if (opsi.tombol) return { inline_keyboard: [[{ text: opsi.tombol.teks, url: opsi.tombol.url }]] };
+    if (opsi.tombol) return { inline_keyboard: [[momonTombolTelegram(opsi.tombol)]] };
     return null;
+}
+
+/**
+ * Baris tombol standar untuk balasan sebuah transaksi yang baru tersimpan/berubah.
+ * `id` 0 berarti tidak ada satu baris yang bisa ditunjuk (mis. hasil multi-transaksi,
+ * atau baris yang barusan dihapus) — tombol ✏️/🗑️ disembunyikan.
+ * `bisaEdit` false untuk transfer: momonPerintahEdit menolaknya karena transfer
+ * menyentuh dua kantong sekaligus, jadi tombolnya pun tidak ditawarkan.
+ */
+function momonTombolHasil(sheet, id, bisaEdit) {
+    const aksi = [];
+    if (id && bisaEdit) aksi.push({ teks: "✏️ Edit", isi: `/edit ${id} ` });
+    if (id) aksi.push({ teks: "🗑️ Hapus", aksi: `hapus:${id}` });
+
+    const tombolAksi = [];
+    if (aksi.length) tombolAksi.push(aksi);
+    tombolAksi.push([{ teks: "📊 Lihat di Google Sheet", url: momonUrlSheet(sheet) }]);
+    return { tombolAksi: tombolAksi };
 }
 
 /** Potong pesan per baris supaya tag HTML tidak terbelah di tengah. */
@@ -2735,6 +2772,31 @@ function momonCekKonfigurasi() {
     } catch (err) {
         laporan.push("❌ Spreadsheet: script ini tidak terikat ke spreadsheet mana pun");
         masalah.push("Spreadsheet");
+    }
+
+    // Tombol "✏️ Edit" memakai switch_inline_query_current_chat, yang cuma mengisi
+    // chatbox kalau inline mode sudah dinyalakan lewat /setinline di BotFather.
+    if (config.BOT_TOKEN) {
+        try {
+            const res = UrlFetchApp.fetch(`https://api.telegram.org/bot${config.BOT_TOKEN}/getMe`, {
+                muteHttpExceptions: true,
+            });
+            const body = JSON.parse(res.getContentText());
+            const bot = (body && body.result) || null;
+            if (!bot) {
+                laporan.push(`❌ getMe gagal (${res.getResponseCode()}): token botnya kemungkinan salah`);
+                masalah.push("MOMON_BOT_TOKEN");
+            } else {
+                laporan.push(`✅ Bot: @${bot.username}`);
+                laporan.push(
+                    bot.supports_inline_queries
+                        ? "✅ Inline mode: aktif (tombol ✏️ Edit bisa mengisi chatbox)"
+                        : '⚠️ Inline mode: MATI — jalankan /setinline di @BotFather, kalau tidak tombol "✏️ Edit" tidak mengisi chatbox',
+                );
+            }
+        } catch (err) {
+            laporan.push("⚠️ getMe: tidak bisa dihubungi — " + err);
+        }
     }
 
     laporan.push(`ℹ️ Zona waktu script: ${MOMON_TIMEZONE}`);

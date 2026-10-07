@@ -5,8 +5,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this is
 
 Momon is a personal finance Telegram bot that runs entirely on **Google Apps Script** and stores
-data in **Google Sheets** — no server, no database, no hosting cost. The whole bot is one
-self-contained file, `Momon.gs` (~2700 lines). There is no build step and no dependency manager.
+data in **Google Sheets** — no server, no database, no hosting cost. The bot is ~3100 lines of
+plain JavaScript in two files: `Config.gs` (everything tunable) and `Momon.gs` (all the logic).
+There is no build step and no dependency manager.
 
 Users write free-form Indonesian text ("kopi 25k pakai GoPay"), send a receipt photo, or send a
 voice note, and Momon records transactions,
@@ -25,9 +26,13 @@ Apps Script editor (or synced with `clasp`).
 npm install -g @google/clasp
 clasp login
 cp .clasp.json.example .clasp.json   # fill in scriptId from Project Settings, this file is gitignored
-clasp push                            # push local Momon.gs -> Apps Script
+clasp push                            # push Config.gs + Momon.gs -> Apps Script
 clasp pull                            # pull Apps Script -> local
 ```
+
+`clasp push` replaces the whole project content, so a file deleted locally also disappears
+upstream. For updating an already-deployed project (including the one-time move of the constants
+into `Config.gs`), see [MIGRASI.md](MIGRASI.md).
 
 Manual verification happens by running specific functions from the Apps Script editor and reading
 the Execution log:
@@ -44,7 +49,7 @@ is deployed.
 
 ## Configuration
 
-All secrets live in **Apps Script → Project Settings → Script Properties**, never in `Momon.gs`:
+All secrets live in **Apps Script → Project Settings → Script Properties**, never in the code:
 
 - `MOMON_BOT_TOKEN` — Telegram bot token from @BotFather
 - `MOMON_GEMINI_API_KEY` — Gemini API key from https://aistudio.google.com/apikey
@@ -54,17 +59,32 @@ All secrets live in **Apps Script → Project Settings → Script Properties**, 
   (Gemini model/latency/HTTP codes, the raw AI JSON before validation, Telegram call timings,
   downloaded file size). Read per request, so it toggles without a redeploy.
 
-The `*_FALLBACK` constants at the top of `Momon.gs` are intentionally left empty since this file is
+The `*_FALLBACK` constants in `Config.gs` are intentionally left empty since that file is
 committed to Git; Script Properties always take precedence when set. `secrets.local.md` (gitignored)
 holds this project's actual local values for pasting into Script Properties — never copy its
-contents into `Momon.gs` or any committed file.
+contents into any committed file.
 
-Tunable behavior constants also live at the top of `Momon.gs`: `MOMON_TIMEZONE` (must match
+Tunable behavior constants also live in `Config.gs`: `MOMON_TIMEZONE` (must match
 `timeZone` in `appsscript.json`), `MOMON_MODEL` (text) and `MOMON_MODEL_MEDIA` (photo/voice),
 `MOMON_PREVIEW_TTL_DETIK`, `MOMON_MAKS_UKURAN_FILE`, `MOMON_KOMENTAR_AI`, `MOMON_MAKS_RINCIAN_CHAT`,
 `MOMON_KATEGORI_PENGELUARAN`/`MOMON_KATEGORI_PEMASUKAN` (closed category whitelists — the AI prompt
 is built from these arrays at runtime, so adding a category is just adding a string), and
 `MOMON_KANTONG_DEFAULT`.
+
+## File layout
+
+Two files:
+
+| File | Contents |
+|---|---|
+| `Config.gs` | Everything meant to be tuned: all `MOMON_*` constants plus `momonConfig` / `momonDaftarUser` / `momonUser` / `momonSemuaUser` (~165 lines) |
+| `Momon.gs` | License header + all bot logic (~2935 lines) |
+
+Apps Script puts both in **one shared global scope**, so these are not modules: there is no
+import/export, either file can call the other's functions, and a name may only be declared once
+across the whole project. Load order is irrelevant because nothing reads another file's value at
+load time — every constant in `Config.gs` is a literal. Keep it that way: a top-level `const`
+initialised from another file's constant would become order-dependent and break.
 
 ## Architecture
 
@@ -76,6 +96,9 @@ is built from these arrays at runtime, so adding a category is just adding a str
    classified as text, photo, or voice and gated by the `momonUser` check in `momonTerimaUpdate`.
    Those two checks are the *only* access control, so a new entry point must gate itself the same
    way — the Web App itself must be deployed as "Anyone" so Telegram can reach it.
+   `update.inline_query` is the one unauthenticated branch: it is answered with an empty result
+   list (`momonJawabInlineQuery`) and reads nothing, so it needs no `momonUser` gate — see the
+   inline-mode note under **Edit & delete**.
 2. **Routing** — `momonRoute(user, teks)` dispatches slash commands (`/saldo`, `/hari`, `/laporan`,
    `/transfer`, `/edit`, `/hapus`, etc.) to their handlers; anything else goes to free-text handling.
 3. **Free text / AI** — `momonProsesTeksBebas` → `momonOtak(user, teks, paksaIntent)` makes a
@@ -103,19 +126,37 @@ is built from these arrays at runtime, so adding a category is just adding a str
    `MOMON_PREVIEW_TTL_DETIK`). `momonTanganiCallback` handles the button presses, rejecting any
    press whose `message_id` doesn't match the stored draft (stale/expired). Confirming calls
    `momonSimpanTransaksi`/`momonSimpanTransfer` — the same validated write path as typed text — then
-   rewrites the preview message in place via `momonEditPesan`.
+   rewrites the preview message in place via `momonEditPesan`. The `hapus:<id>` action is the one
+   deliberate exception to the stale-draft check: it is matched *before* it, because that button
+   lives on a result message rather than a draft and must stay pressable indefinitely. It writes
+   nothing itself — it just calls `momonPerintahHapus`, which raises the usual confirm preview.
 8. **Edit & delete** — rows carry a per-user sequential `ID`. `/edit <id> <free text>` reinterprets
    the row through Gemini and rewrites it (Transfer rows are refused — they touch two kantong);
    `/hapus <id>` always confirms first, and deleting one leg of a transfer deletes both
-   (`momonCariPasanganTransfer`, matched on identical `Dicatat Pada` + nominal).
-9. **Debug** — `momonDebugCatat(label, detail)` appends to a per-execution trace that
-   `momonTerimaUpdate` flushes to the chat in a `finally` block, so the diagnostic arrives after the
-   real reply on every path (success, error, or mid-flow `return`). It is a no-op unless
-   `MOMON_DEBUG` is set, so calls can be left in hot paths. Note `MOMON_DEBUG_LAGI_KIRIM`: the
-   flush's own `momonKirim` must not re-enter the trace. `/debug` reports runtime status and works
-   regardless of the flag; the last thrown error is persisted to Script Property
-   `MOMON_ERROR_TERAKHIR` so it survives past the request that caused it.
-10. **Scheduled** — `momonSapaPagi` / `momonIngatkanMalam` are meant to be wired up as time-driven
+   (`momonCariPasanganTransfer`, matched on identical `Dicatat Pada` + nominal). Both are also
+   reachable from the buttons `momonTombolHasil(sheet, id, bisaEdit)` attaches to every write
+   result (✏️ Edit / 🗑️ Hapus / 📊 Sheet). ✏️ uses `switch_inline_query_current_chat` to *fill*
+   the user's input box with `/edit <id> `, which has two consequences: **inline mode must be
+   enabled via `/setinline` in BotFather** (`momonCekKonfigurasi` warns while it is off), and
+   Telegram prepends `@username ` to whatever the user then sends — `momonLepasMentionBot` strips
+   it in `momonTerimaUpdate` so the text reaches `momonRoute` as a plain command. The button is
+   omitted when there is no single row to point at (multi-transaction results, transfers).
+9. **Progress markers** — every action that touches the sheet rewrites *one* message rather than
+   stacking new ones: ⏳ before the Gemini call (that's where the wait is), 💾 immediately before
+   the write, then the result. The marker's `message_id` is threaded through as a trailing
+   optional `penandaId` argument (`momonCatatTransaksi`, `momonTransfer`, `momonSajikanLaporan`),
+   and the result is written with `momonBalasKePenanda` rather than `momonEditPesan` — the latter
+   only carries one chunk, so a long report written straight into a marker would be truncated
+   silently. A `penandaId` of `0` (marker failed to send) degrades to a plain `momonKirim`, so
+   this layer can never break a write.
+10. **Debug** — `momonDebugCatat(label, detail)` appends to a per-execution trace that
+    `momonTerimaUpdate` flushes to the chat in a `finally` block, so the diagnostic arrives after the
+    real reply on every path (success, error, or mid-flow `return`). It is a no-op unless
+    `MOMON_DEBUG` is set, so calls can be left in hot paths. Note `MOMON_DEBUG_LAGI_KIRIM`: the
+    flush's own `momonKirim` must not re-enter the trace. `/debug` reports runtime status and works
+    regardless of the flag; the last thrown error is persisted to Script Property
+    `MOMON_ERROR_TERAKHIR` so it survives past the request that caused it.
+11. **Scheduled** — `momonSapaPagi` / `momonIngatkanMalam` are meant to be wired up as time-driven
     Triggers in the Apps Script UI (not callable from Telegram).
 
 ### Multi-account model

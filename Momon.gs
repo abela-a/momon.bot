@@ -859,9 +859,14 @@ function momonBukanArusKas(r) {
 function momonHitungRingkasan(rows) {
     let masuk = 0,
         keluar = 0,
+        jumlah = 0,
         terbesar = null;
+    const hariUnik = {};
+
     rows.forEach((r) => {
         if (momonBukanArusKas(r)) return;
+        jumlah++;
+        hariUnik[r.tgl] = true;
         if (r.tipe === "Pemasukan") masuk += r.nominal;
         else {
             keluar += r.nominal;
@@ -869,14 +874,10 @@ function momonHitungRingkasan(rows) {
         }
     });
 
-    const hariUnik = {};
-    rows.forEach((r) => {
-        hariUnik[r.tgl] = true;
-    });
     const jumlahHari = Math.max(1, Object.keys(hariUnik).length);
 
     return {
-        jumlah: rows.length,
+        jumlah: jumlah,
         masuk: masuk,
         keluar: keluar,
         net: masuk - keluar,

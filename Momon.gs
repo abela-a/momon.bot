@@ -43,6 +43,15 @@
 const MOMON_BOT_TOKEN_FALLBACK = "";
 const MOMON_GEMINI_API_KEY_FALLBACK = "";
 
+// Mode debug. Nyalakan lewat Script Property MOMON_DEBUG = "true" (tanpa perlu
+// redeploy), matikan dengan menghapus propertinya atau mengisi "false".
+// Saat aktif, Momon mengirim satu pesan diagnosa setelah tiap balasan.
+const MOMON_DEBUG_FALLBACK = false;
+
+// Error terakhir disimpan di sini supaya bisa dilihat lewat /debug walau
+// kejadiannya sudah lewat.
+const MOMON_PROP_ERROR_TERAKHIR = "MOMON_ERROR_TERAKHIR";
+
 // Daftar akun Telegram yang boleh memakai Momon — tiap akun punya sheet sendiri.
 // Ini hanya CONTOH BENTUK DATA; isi aslinya taruh di Script Property MOMON_USERS
 // supaya chat id pribadi tidak ikut ter-commit.
@@ -134,6 +143,7 @@ function momonConfig() {
         BOT_TOKEN: props.getProperty("MOMON_BOT_TOKEN") || MOMON_BOT_TOKEN_FALLBACK,
         GEMINI_API_KEY: props.getProperty("MOMON_GEMINI_API_KEY") || MOMON_GEMINI_API_KEY_FALLBACK,
         WEBHOOK_URL: props.getProperty("MOMON_WEBHOOK_URL") || "",
+        DEBUG: String(props.getProperty("MOMON_DEBUG") || MOMON_DEBUG_FALLBACK).toLowerCase() === "true",
     };
 }
 
@@ -178,22 +188,154 @@ function momonSemuaUser() {
 }
 
 // ============================================================
+//  DEBUG
+// ============================================================
+//
+// Variabel di bawah hidup selama SATU eksekusi webhook saja — Apps Script
+// menjalankan ulang seluruh file tiap request, jadi jejaknya tidak pernah
+// bocor antar pesan atau antar user.
+
+let MOMON_DEBUG_JEJAK = [];
+let MOMON_DEBUG_STATUS = null;
+let MOMON_DEBUG_LAGI_KIRIM = false;
+const MOMON_DEBUG_MULAI = Date.now();
+
+function momonDebugAktif() {
+    if (MOMON_DEBUG_STATUS === null) MOMON_DEBUG_STATUS = momonConfig().DEBUG;
+    return MOMON_DEBUG_STATUS;
+}
+
+/** Catat satu langkah. Tidak melakukan apa-apa kalau debug mati. */
+function momonDebugCatat(label, detail) {
+    if (!momonDebugAktif()) return;
+    MOMON_DEBUG_JEJAK.push({
+        label: String(label),
+        detail: detail === undefined || detail === null ? "" : String(detail),
+        ms: Date.now() - MOMON_DEBUG_MULAI,
+    });
+}
+
+function momonDebugPotong(teks, maks) {
+    const str = String(teks);
+    return str.length <= maks ? str : str.slice(0, maks) + ` …(+${str.length - maks} karakter)`;
+}
+
+/** Kirim jejak yang terkumpul sebagai satu pesan terpisah, lalu kosongkan. */
+function momonDebugKirim(chatId) {
+    if (!momonDebugAktif() || !MOMON_DEBUG_JEJAK.length || !chatId) return;
+
+    const jejak = MOMON_DEBUG_JEJAK;
+    MOMON_DEBUG_JEJAK = []; // dikosongkan dulu supaya pengiriman ini tidak ikut tercatat
+
+    const baris = ["🐞 <b>Debug</b> — <i>matikan lewat Script Property MOMON_DEBUG</i>", ""];
+    jejak.forEach((j) => {
+        baris.push(`<b>${momonEsc(j.label)}</b> <i>+${j.ms}ms</i>`);
+        if (j.detail) baris.push(`<pre><code>${momonEsc(j.detail)}</code></pre>`);
+    });
+    baris.push("");
+    baris.push(`<i>total ${Date.now() - MOMON_DEBUG_MULAI}ms</i>`);
+
+    MOMON_DEBUG_LAGI_KIRIM = true;
+    try {
+        momonKirim(chatId, baris.join("\n"));
+    } finally {
+        MOMON_DEBUG_LAGI_KIRIM = false;
+    }
+}
+
+/** Simpan error terakhir supaya /debug bisa menampilkannya nanti. */
+function momonCatatErrorTerakhir(err) {
+    try {
+        PropertiesService.getScriptProperties().setProperty(
+            MOMON_PROP_ERROR_TERAKHIR,
+            JSON.stringify({
+                waktu: Utilities.formatDate(new Date(), MOMON_TIMEZONE, "yyyy-MM-dd HH:mm:ss"),
+                pesan: momonDebugPotong(String(err), 300),
+                stack: momonDebugPotong(String((err && err.stack) || "-"), 600),
+            }),
+        );
+    } catch (_) {
+        /* jangan sampai pencatatan error justru bikin error baru */
+    }
+}
+
+function momonPerintahDebug(user) {
+    const config = momonConfig();
+    const sheet = momonSheetData(user);
+    const totalBaris = Math.max(sheet.getLastRow() - 1, 0);
+    const pending = momonAmbilPending(user.chatId);
+
+    const baris = [
+        `🐞 <b>Status Momon</b>`,
+        "",
+        `Debug: <b>${config.DEBUG ? "AKTIF" : "mati"}</b>`,
+        `<i>Ubah di Script Properties → MOMON_DEBUG = true/false (tidak perlu redeploy).</i>`,
+        "",
+        "<b>Konfigurasi</b>",
+        `• Bot token: ${config.BOT_TOKEN ? "✅ terisi" : "❌ kosong"}`,
+        `• Gemini key: ${config.GEMINI_API_KEY ? "✅ terisi" : "❌ kosong"}`,
+        `• Webhook URL: ${config.WEBHOOK_URL ? "✅ terisi" : "⚠️ kosong"}`,
+        "",
+        "<b>Model</b>",
+        `• Teks: <code>${momonEsc(MOMON_MODEL)}</code>`,
+        `• Gambar/suara: <code>${momonEsc(MOMON_MODEL_MEDIA)}</code>`,
+        `• Maks percobaan: ${MOMON_GEMINI_MAKS_PERCOBAAN}`,
+        "",
+        "<b>Data</b>",
+        `• Zona waktu: ${MOMON_TIMEZONE}`,
+        `• Sheet: <code>${momonEsc(user.sheet)}</code> — ${totalBaris} baris`,
+        `• ID berikutnya: ${momonIdBerikutnya(sheet)}`,
+        `• Kantong: ${user.kantong.length}`,
+    ];
+
+    baris.push("");
+    if (pending) {
+        baris.push(`<b>Draft menunggu</b>: ${momonEsc(pending.jenis)} (dari ${momonEsc(pending.sumber || "perintah")})`);
+    } else {
+        baris.push("<b>Draft menunggu</b>: tidak ada");
+    }
+
+    const errMentah = PropertiesService.getScriptProperties().getProperty(MOMON_PROP_ERROR_TERAKHIR);
+    baris.push("");
+    if (errMentah) {
+        try {
+            const err = JSON.parse(errMentah);
+            baris.push(`<b>Error terakhir</b> — ${momonEsc(err.waktu)}`);
+            baris.push(`<pre><code>${momonEsc(err.pesan)}</code></pre>`);
+        } catch (_) {
+            baris.push("<b>Error terakhir</b>: tercatat tapi tidak terbaca");
+        }
+    } else {
+        baris.push("<b>Error terakhir</b>: belum ada 🎉");
+    }
+
+    momonKirim(user.chatId, baris.join("\n"));
+}
+
+// ============================================================
 //  ENTRY POINT & ROUTING
 // ============================================================
 
 function momonTerimaUpdate(e) {
+    let chatIdDebug = "";
     try {
         if (!e || !e.postData) return;
 
         const update = JSON.parse(e.postData.contents);
 
         // Tombol konfirmasi (preview gambar/suara, konfirmasi hapus).
-        if (update.callback_query) return momonTanganiCallback(update.callback_query);
+        if (update.callback_query) {
+            const cqChat = update.callback_query.message && update.callback_query.message.chat;
+            chatIdDebug = cqChat ? String(cqChat.id) : "";
+            momonDebugCatat("Update: callback_query", update.callback_query.data);
+            return momonTanganiCallback(update.callback_query);
+        }
 
         const pesan = update.message || update.edited_message;
         if (!pesan || !pesan.chat) return;
 
         const chatId = String(pesan.chat.id);
+        chatIdDebug = chatId;
         // Caption hanya dianggap teks untuk FOTO. Lampiran jenis lain belum
         // didukung, dan captionnya tidak boleh diam-diam tercatat sebagai
         // transaksi lewat jalur teks biasa.
@@ -251,6 +393,8 @@ function momonTerimaUpdate(e) {
         momonRoute(user, teks);
     } catch (err) {
         Logger.log("Momon error: " + err + "\n" + (err && err.stack));
+        momonCatatErrorTerakhir(err);
+        momonDebugCatat("ERROR", String(err) + "\n" + momonDebugPotong(String((err && err.stack) || ""), 600));
         try {
             const chatId = momonChatIdDariUpdate(JSON.parse(e.postData.contents));
             momonKirim(
@@ -262,6 +406,10 @@ function momonTerimaUpdate(e) {
         } catch (_) {
             /* jangan sampai error ganda */
         }
+    } finally {
+        // Dikirim di akhir supaya diagnosanya muncul SETELAH balasan aslinya,
+        // baik jalurnya sukses, gagal, maupun berhenti lewat return di tengah.
+        momonDebugKirim(chatIdDebug);
     }
 }
 
@@ -307,6 +455,8 @@ function momonRoute(user, teks) {
     }
 
     // /edit <id> <koreksi bebas>
+    if (lower.indexOf("/debug") === 0) return momonPerintahDebug(user);
+
     if (lower.indexOf("/edit") === 0) return momonPerintahEdit(user, teks.slice("/edit".length).trim());
 
     // /hapus <id>
@@ -476,16 +626,25 @@ function momonPanggilGemini(config, prompt, suhu, opsi) {
         muteHttpExceptions: true,
     };
 
+    momonDebugCatat(
+        `Gemini → ${model}`,
+        `prompt ${prompt.length} karakter` +
+            (opsi.media ? `, media ${opsi.media.mimeType} ~${Math.round(opsi.media.data.length / 1365)} KB` : ""),
+    );
+
     let res = null;
     for (let percobaan = 1; percobaan <= MOMON_GEMINI_MAKS_PERCOBAAN; percobaan++) {
+        const mulai = Date.now();
         try {
             res = UrlFetchApp.fetch(url, permintaan);
         } catch (err) {
             Logger.log("Gagal menghubungi Gemini: " + err);
+            momonDebugCatat(`Gemini gagal konek (percobaan ${percobaan})`, err);
             return { ok: false, pesan: "📡 Momon lagi susah sinyal ke layanan AI. Coba lagi sebentar lagi ya!" };
         }
 
         const kode = res.getResponseCode();
+        momonDebugCatat(`Gemini ← HTTP ${kode} (percobaan ${percobaan})`, `${Date.now() - mulai}ms`);
         if (kode === 200) break;
 
         // 429 kena rate limit, 500/503 modelnya lagi penuh — ketiganya sementara.
@@ -514,6 +673,7 @@ function momonPanggilGemini(config, prompt, suhu, opsi) {
 
     if (body.error) {
         Logger.log("Gemini API error: " + JSON.stringify(body.error));
+        momonDebugCatat("Gemini membalas error", JSON.stringify(body.error));
         return { ok: false, pesan: "😔 Ada kendala di layanan AI. Mohon coba beberapa saat lagi!" };
     }
 
@@ -523,9 +683,11 @@ function momonPanggilGemini(config, prompt, suhu, opsi) {
             .replace(/```json/gi, "")
             .replace(/```/gi, "")
             .trim();
+        momonDebugCatat("Jawaban AI (mentah)", momonDebugPotong(teks, 1200));
         return { ok: true, data: JSON.parse(teks) };
     } catch (err) {
         Logger.log("Gagal parse JSON hasil Gemini: " + JSON.stringify(body));
+        momonDebugCatat("Jawaban AI tidak bisa diparse", momonDebugPotong(JSON.stringify(body), 1200));
         return {
             ok: false,
             pesan: "🙃 Momon bingung baca jawaban AI-nya. Coba tulis dengan kalimat lebih sederhana ya!",
@@ -1051,22 +1213,26 @@ function momonUnduhFileTelegram(fileId, mimeDefault) {
     }
 
     try {
+        const mulai = Date.now();
         const res = UrlFetchApp.fetch(
             `https://api.telegram.org/file/bot${config.BOT_TOKEN}/${info.result.file_path}`,
             { muteHttpExceptions: true },
         );
         if (res.getResponseCode() !== 200) {
             Logger.log("Unduh berkas HTTP " + res.getResponseCode());
+            momonDebugCatat("Unduh berkas gagal", "HTTP " + res.getResponseCode());
             return { ok: false, pesan: "📡 Momon gagal mengunduh berkasnya. Coba kirim ulang ya!" };
         }
         const blob = res.getBlob();
         const tipe = blob.getContentType();
+        const mimeType = tipe && tipe !== "application/octet-stream" ? tipe : mimeDefault;
+        momonDebugCatat(
+            "Berkas terunduh",
+            `${mimeType}, ${Math.round(Number(info.result.file_size || 0) / 1024)} KB, ${Date.now() - mulai}ms`,
+        );
         return {
             ok: true,
-            media: {
-                mimeType: tipe && tipe !== "application/octet-stream" ? tipe : mimeDefault,
-                data: Utilities.base64Encode(blob.getBytes()),
-            },
+            media: { mimeType: mimeType, data: Utilities.base64Encode(blob.getBytes()) },
         };
     } catch (err) {
         Logger.log("Unduh berkas gagal: " + err);
@@ -2138,6 +2304,7 @@ function momonBantuan(user) {
             "/transfer &lt;nominal&gt; dari &lt;asal&gt; ke &lt;tujuan&gt; — pindah saldo antar kantong",
             "/edit &lt;id&gt; &lt;koreksi&gt; — perbaiki transaksi, contoh <code>/edit 42 nominalnya 30rb</code>",
             "/hapus &lt;id&gt; — hapus transaksi (Momon tanya dulu)",
+            "/debug — status Momon (model, config, error terakhir)",
             "/id — lihat chat id kamu",
             "/help — pesan ini",
             "",
@@ -2420,14 +2587,22 @@ function momonKirim(chatId, teks, opsi) {
         }
 
         try {
+            const mulai = Date.now();
             const res = UrlFetchApp.fetch(url, {
                 method: "post",
                 contentType: "application/json",
                 payload: JSON.stringify(payload),
                 muteHttpExceptions: true,
             });
+            // Pengiriman pesan debug sendiri tidak ikut dicatat, biar tidak berputar.
+            if (!MOMON_DEBUG_LAGI_KIRIM) {
+                momonDebugCatat(`Telegram sendMessage ← ${res.getResponseCode()}`, `${Date.now() - mulai}ms`);
+            }
             if (res.getResponseCode() !== 200) {
                 Logger.log("Gagal kirim Telegram (" + res.getResponseCode() + "): " + res.getContentText());
+                if (!MOMON_DEBUG_LAGI_KIRIM) {
+                    momonDebugCatat("Isi gagalnya", momonDebugPotong(res.getContentText(), 400));
+                }
                 return;
             }
             const body = JSON.parse(res.getContentText());
@@ -2456,14 +2631,17 @@ function momonEditPesan(chatId, messageId, teks, opsi) {
     payload.reply_markup = markup || { inline_keyboard: [] }; // kosongkan tombol lama
 
     try {
+        const mulai = Date.now();
         const res = UrlFetchApp.fetch(`https://api.telegram.org/bot${config.BOT_TOKEN}/editMessageText`, {
             method: "post",
             contentType: "application/json",
             payload: JSON.stringify(payload),
             muteHttpExceptions: true,
         });
+        momonDebugCatat(`Telegram editMessageText ← ${res.getResponseCode()}`, `${Date.now() - mulai}ms`);
         if (res.getResponseCode() !== 200) {
             Logger.log("Gagal edit Telegram (" + res.getResponseCode() + "): " + res.getContentText());
+            momonDebugCatat("Isi gagalnya", momonDebugPotong(res.getContentText(), 400));
         }
     } catch (err) {
         Logger.log("Exception edit Telegram: " + err);

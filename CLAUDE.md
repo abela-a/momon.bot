@@ -50,6 +50,9 @@ All secrets live in **Apps Script → Project Settings → Script Properties**, 
 - `MOMON_GEMINI_API_KEY` — Gemini API key from https://aistudio.google.com/apikey
 - `MOMON_USERS` — JSON map of allowed Telegram chat ids → `{nama, sheet, sheetLaporan, kantong}`
 - `MOMON_WEBHOOK_URL` — the deployed Web App `/exec` URL
+- `MOMON_DEBUG` — optional; `"true"` makes Momon send a diagnostic message after each reply
+  (Gemini model/latency/HTTP codes, the raw AI JSON before validation, Telegram call timings,
+  downloaded file size). Read per request, so it toggles without a redeploy.
 
 The `*_FALLBACK` constants at the top of `Momon.gs` are intentionally left empty since this file is
 committed to Git; Script Properties always take precedence when set. `secrets.local.md` (gitignored)
@@ -105,8 +108,15 @@ is built from these arrays at runtime, so adding a category is just adding a str
    the row through Gemini and rewrites it (Transfer rows are refused — they touch two kantong);
    `/hapus <id>` always confirms first, and deleting one leg of a transfer deletes both
    (`momonCariPasanganTransfer`, matched on identical `Dicatat Pada` + nominal).
-9. **Scheduled** — `momonSapaPagi` / `momonIngatkanMalam` are meant to be wired up as time-driven
-   Triggers in the Apps Script UI (not callable from Telegram).
+9. **Debug** — `momonDebugCatat(label, detail)` appends to a per-execution trace that
+   `momonTerimaUpdate` flushes to the chat in a `finally` block, so the diagnostic arrives after the
+   real reply on every path (success, error, or mid-flow `return`). It is a no-op unless
+   `MOMON_DEBUG` is set, so calls can be left in hot paths. Note `MOMON_DEBUG_LAGI_KIRIM`: the
+   flush's own `momonKirim` must not re-enter the trace. `/debug` reports runtime status and works
+   regardless of the flag; the last thrown error is persisted to Script Property
+   `MOMON_ERROR_TERAKHIR` so it survives past the request that caused it.
+10. **Scheduled** — `momonSapaPagi` / `momonIngatkanMalam` are meant to be wired up as time-driven
+    Triggers in the Apps Script UI (not callable from Telegram).
 
 ### Multi-account model
 

@@ -229,6 +229,7 @@ Selesai. Kirim `/help` ke bot untuk mulai. 🎉
 | `/transfer <nominal> dari <asal> ke <tujuan>` | Transfer saldo antar kantong; tanpa argumen = contoh cara pakai |
 | `/edit <id> <koreksi>` | Perbaiki transaksi yang sudah tercatat, koreksinya bahasa bebas |
 | `/hapus <id>` | Hapus transaksi (Momon minta konfirmasi dulu) |
+| `/debug` | Status Momon: model, config, jumlah baris, draft pending, error terakhir |
 | `/sheet` | Tombol ke Google Sheet |
 | `/kategori` | Daftar kategori yang berlaku |
 | `/kantong` | Daftar kantong milikmu |
@@ -324,6 +325,37 @@ tabel per-kelompok dengan persentase, lalu rincian transaksi **lengkap**
 
 > Baris yang tanggalnya bukan Date atau nominalnya ≤ 0 otomatis dilewati,
 > jadi aman kalau kamu menambahkan catatan manual di bawah data.
+
+---
+
+## 🐞 Debug
+
+Kalau ada yang aneh — struk salah dibaca, balasan error, atau lambat — nyalakan
+mode debug lewat **Script Properties**:
+
+| Property | Nilai |
+|---|---|
+| `MOMON_DEBUG` | `true` untuk menyalakan, `false` / hapus untuk mematikan |
+
+Tidak perlu redeploy; Script Properties dibaca tiap pesan masuk.
+
+Saat aktif, setiap balasan Momon diikuti satu pesan diagnosa berisi:
+
+- model Gemini yang dipakai, ukuran prompt, dan ukuran media yang dikirim
+- kode HTTP tiap percobaan ke Gemini + berapa lama tiap percobaan
+- **jawaban mentah AI** sebelum divalidasi — ini biasanya yang paling menjelaskan
+  kenapa kategori atau nominalnya meleset
+- kode HTTP dan durasi tiap panggilan Telegram
+- ukuran & tipe berkas foto/voice yang diunduh
+- stack error kalau ada yang dilempar
+
+`/debug` sendiri bisa dipakai kapan saja (tidak perlu `MOMON_DEBUG` aktif) untuk
+melihat status: config terisi atau belum, model yang dipakai, jumlah baris sheet,
+ID berikutnya, draft yang sedang menunggu konfirmasi, dan error terakhir yang
+tercatat.
+
+> Matikan lagi kalau sudah selesai — pesan diagnosa ikut terkirim ke chat dan
+> isinya cukup berisik.
 
 ---
 
